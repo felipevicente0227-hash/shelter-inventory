@@ -1,0 +1,95 @@
+# Builds the downloadable app on GitHub's own computers, so you never need a
+# Mac to make the Mac version or a clean Windows PC to make the Windows one.
+#
+# Two ways it runs:
+#   * every push and pull request  -> tests only (fast, no download produced)
+#   * pushing a tag like v0.2.0    -> tests, then build BOTH downloads and
+#                                     attach them to a GitHub Release
+#
+# To ship a new version:  git tag v0.2.1 && git push --tags
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to attach files to the Release
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tests.py
+
+  build-windows:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pyinstaller
+      - run: python tests.py
+      - run: >
+          python -m PyInstaller --noconfirm --clean --onefile --windowed
+          --name ShelterInventory --icon icon.ico --add-data "icon.ico;."
+          shelter_inventory.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShelterInventory-windows
+          path: dist/ShelterInventory.exe
+
+  build-mac:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pyinstaller
+      - run: python tests.py
+      - run: >
+          python -m PyInstaller --noconfirm --clean --windowed
+          --name ShelterInventory --add-data "icon.ico:."
+          shelter_inventory.py
+      - run: cd dist && zip -r ShelterInventory-mac.zip ShelterInventory.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShelterInventory-mac
+          path: dist/ShelterInventory-mac.zip
+
+  release:
+    needs: [build-windows, build-mac]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            downloads/ShelterInventory-windows/ShelterInventory.exe
+            downloads/ShelterInventory-mac/ShelterInventory-mac.zip
+          body: |
+            **Windows:** download `ShelterInventory.exe` and double-click it.
+            The first time, Windows may say "Windows protected your PC" —
+            click **More info** → **Run anyway**. (The app is not code-signed,
+            because signing certificates cost money and this tool is free.)
+
+            **Mac:** download the zip, unzip, right-click `ShelterInventory` → **Open**.
+
+            Your data is saved in `Documents/ShelterInventory/` on your computer.
+            Nothing is uploaded anywhere.
