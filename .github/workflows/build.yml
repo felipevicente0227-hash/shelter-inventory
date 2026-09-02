@@ -38,11 +38,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pyinstaller
+      - run: python -m pip install --upgrade pyinstaller pywebview
       - run: python tests.py
       - run: >
           python -m PyInstaller --noconfirm --clean --onefile --windowed
           --name ShelterInventory --icon icon.ico --add-data "icon.ico;."
+          --add-data "webui;webui" --hidden-import shelter_inventory_classic
           shelter_inventory.py
       - uses: actions/upload-artifact@v4
         with:
@@ -58,11 +59,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pyinstaller
+      - run: python -m pip install --upgrade pyinstaller pywebview
       - run: python tests.py
       - run: >
           python -m PyInstaller --noconfirm --clean --windowed
           --name ShelterInventory --add-data "icon.ico:."
+          --add-data "webui:webui" --hidden-import shelter_inventory_classic
           shelter_inventory.py
       - run: cd dist && zip -r ShelterInventory-mac.zip ShelterInventory.app
       - uses: actions/upload-artifact@v4

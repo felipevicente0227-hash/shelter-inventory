@@ -23,7 +23,7 @@ os.environ["SHELTER_INVENTORY_DATA"] = str(tmp)
 import tkinter as tk  # noqa: E402
 
 import inventory_core as core  # noqa: E402
-import shelter_inventory as gui  # noqa: E402
+import shelter_inventory_classic as gui  # noqa: E402
 
 
 def shot(name):
@@ -63,7 +63,15 @@ assert store.find(item["id"])["current_qty"] == 70
 app.undo()
 assert store.find(item["id"])["current_qty"] == 25
 
+# Select the Socks row through the table, like a person would, and use the detail panel.
 app.sort_var.set("urgent"); app.filter_var.set("all"); app.render()
+app.tree.selection_set(str(item["id"])); app.on_select()
+assert app.selected_id == item["id"]
+app.qty_var.set("30"); app.save_selected_quantity()
+assert store.find(item["id"])["current_qty"] == 30
+app.search_var.set("sock"); root.update()
+assert len(app.tree.get_children()) == 1
+app.search_var.set(""); root.update()
 root.update()
 shot("shot-main.png")
 

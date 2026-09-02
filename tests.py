@@ -393,5 +393,56 @@ class ExportTests(TempFolderTest):
         self.assertEqual(target.read_text(encoding="utf-8"), "hello\n")
 
 
+# ------------------------------------------------------------------ the api
+
+class ApiTests(TempFolderTest):
+    """The bridge the web page talks to. No window is opened."""
+
+    def api(self):
+        import shelter_inventory
+        return shelter_inventory.Api(self.store())
+
+    def test_state_shape(self):
+        st = self.api().get_state()
+        for key in ("items", "settings", "undo_label", "last_saved", "data_file", "folder", "version"):
+            self.assertIn(key, st)
+        self.assertTrue(st["ok"])
+
+    def test_add_edit_delete_undo_round_trip(self):
+        a = self.api()
+        st = a.add_item("Soup", "Food", "5", "10")
+        self.assertTrue(st["ok"]); self.assertEqual(st["items"][0]["name"], "Soup")
+        self.assertEqual(a.set_quantity(1, "7")["items"][0]["current_qty"], 7)
+        self.assertEqual(a.update_item("1", "Tinned soup", "Food", "7", "40")["items"][0]["target_qty"], 40)
+        self.assertEqual(a.delete_item(1)["items"], [])
+        self.assertEqual(a.undo()["items"][0]["name"], "Tinned soup")
+        again = self.store()
+        self.assertEqual(again.find(1)["name"], "Tinned soup")
+
+    def test_errors_come_back_as_sentences(self):
+        a = self.api()
+        self.assertEqual(a.add_item("", "Food", "1", "1"), {"ok": False, "error": "Please enter an item name."})
+        a.add_item("Soup", "Food", "1", "1")
+        self.assertFalse(a.add_item("soup", "Food", "1", "1")["ok"])
+        self.assertFalse(a.set_quantity(1, "-3")["ok"])
+
+    def test_settings_validation_and_save(self):
+        a = self.api()
+        self.assertFalse(a.save_settings({"categories": []})["ok"])
+        self.assertFalse(a.save_settings({"urgent_below_percent": 90, "low_below_percent": 10})["ok"])
+        st = a.save_settings({"charity_name": " Hope House ", "categories": ["Pet food", "Pet food", "Litter"],
+                              "urgent_below_percent": 30, "low_below_percent": 60, "setup_done": True})
+        self.assertTrue(st["ok"])
+        s = self.store().settings
+        self.assertEqual((s["charity_name"], s["categories"], s["urgent_below_percent"], s["setup_done"]),
+                         ("Hope House", ["Pet food", "Litter"], 30, True))
+
+    def test_needs_list_and_no_dialog_without_window(self):
+        a = self.api()
+        a.add_item("Soup", "Food", "1", "10")
+        self.assertIn("Soup", a.needs_list())
+        self.assertEqual(a.export_csv(), {"ok": False})     # no window -> no dialog -> nothing written
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

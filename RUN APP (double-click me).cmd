@@ -8,4 +8,5 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+py -c "import webview" 2>nul || py -m pip install --quiet pywebview
 start "" pyw shelter_inventory.py

@@ -1,0 +1,2 @@
+# Only needed to run from source. The .exe from the Releases page needs nothing.
+pywebview>=5.0

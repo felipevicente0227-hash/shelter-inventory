@@ -5,12 +5,9 @@ track of donated goods on paper or in their heads. It shows what you have, what
 you are running out of, and gives you a ready-to-share **"What we need"** list
 for donors. Everything stays on your own computer.
 
-![screenshot](docs/screenshot-main.png)
+![dashboard](docs/screenshot-main.png)
 
-The **What we need** button turns the red and amber rows into a list you can
-paste anywhere:
-
-![needs list](docs/screenshot-needs.png)
+![inventory](docs/screenshot-inventory.png)
 
 ---
 
@@ -40,19 +37,28 @@ on Windows, or run `python3 shelter_inventory.py` on Mac/Linux.
 
 ### Using it
 
-- **Add an item**: type the name, pick a category, enter what you have now and
-  what you would like to have (the *target*), press **Add item** or Enter.
-- **Update stock**: change the number in the *Update qty* box and press **Save**.
-- **Edit / rename / delete**: press **Edit** on the row. Delete asks you first,
-  and the **Undo** button brings back anything you change by mistake.
-- **Colours**: red **URGENT** = below 50% of target, amber **LOW** = below 80%,
-  green **OK** = 80% or more. You can change those two numbers in **Settings**.
-- **What we need**: one button gives you a plain-text list of everything
-  urgent or low, most-needed first. Copy it into an email, a Facebook post,
-  or print it for a donation drive.
-- **Export CSV**: the whole inventory as a spreadsheet file that opens in Excel.
-- **Settings**: your charity's name, your own categories (one per line), the
-  colour thresholds, and a button to load the example items.
+- **Dashboard**: how stocked you are overall, what needs attention, and each
+  category at a glance.
+- **Add an item**: **+ New item** — name, category, what you *have* and what
+  you *need* (the target).
+- **Update stock**: on the Inventory page, type the new count in the row and
+  press Enter or **Save**.
+- **Edit / rename / delete**: **Edit** on the row. Delete asks first, and
+  **Undo** (Ctrl+Z) brings back anything you change by mistake.
+- **Find things**: the search box filters as you type; the category, show and
+  sort boxes narrow the list.
+- **Colours**: red is **Urgent** (below 50% of target), amber is **Low**
+  (below 80%), green is **Fine**. Change the two numbers under Settings.
+- **What we need**: a plain-text list of everything urgent or low, most-needed
+  first. Copy it into an email, a Facebook post, or print it for a donation drive.
+- **Settings**: charity name, your own categories (one per line), the two
+  thresholds, and a button to load the example items. **Data folder** opens
+  the folder where everything is saved.
+
+The app draws its screen with the web engine already on your computer (Edge
+on Windows, Safari on a Mac) — it still needs no internet. On a very old
+Windows machine without that engine, the same app opens in a plainer window
+instead, with every feature.
 
 ### Where your data lives (please read this once)
 
@@ -107,18 +113,24 @@ Questions or ideas: open an issue on this repository.
 
 ## For developers
 
-Pure Python 3, standard library only (tkinter). No packages to install.
+Python 3 plus one package, `pywebview` (the window). The data layer is standard library only.
 
 ```
-python tests.py            # 35 tests, no window, nothing outside a temp folder
+pip install pywebview
+python tests.py            # 40 tests, no window, nothing outside a temp folder
 python shelter_inventory.py
 ```
+
+Open `webui/index.html` in any browser to work on the design with sample data
+(no Python needed — it runs in demo mode).
 
 | File | What it does |
 |---|---|
 | `inventory_core.py` | Data folder, safe saving, backups, undo, the urgent/low/ok logic, CSV and needs-list exports. No GUI code. |
-| `shelter_inventory.py` | The tkinter window. Only calls into the core. |
-| `tests.py` | Tests for the core. |
+| `shelter_inventory.py` | The window: opens `webui/index.html` with pywebview and exposes `Api` to it. |
+| `webui/index.html` | The whole interface — styles, scripts, icons — in one file. No internet. |
+| `shelter_inventory_classic.py` | The plain tkinter window, used automatically when no web engine is available. |
+| `tests.py` | Tests for the core and the `Api` bridge. |
 | `dev/smoke_gui.py` | Drives the real window under `xvfb` for a screenshot and a crash check. |
 | `BUILD EXE (double-click me).cmd` | Runs the tests, then builds `dist\ShelterInventory.exe` with PyInstaller. |
 | `.github/workflows/build.yml` | Builds Windows and Mac downloads on GitHub and attaches them to a Release when you push a tag like `v0.2.1`. |
