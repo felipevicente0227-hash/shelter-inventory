@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shelter Inventory</title>
+<style>
+  /* ------------------------------------------------------------------
+     Shelter Inventory Manager - the window.
+     One file, no internet: every style, script and icon is in here.
+     ------------------------------------------------------------------ */
+  :root {
+    --bg: #F4F3EF;
+    --card: #FFFFFF;
+    --card-2: #FAF9F6;
+    --ink: #1B1B1A;
+    --ink-2: #4A4A46;
+    --muted: #8A8985;
+    --line: #ECEAE4;
+    --green: #2E7D5B;
+    --green-soft: #E6F3EC;
+    --amber: #B8730F;
+    --amber-soft: #FBF1DE;
+    --red: #B4372B;
+    --red-soft: #FBE8E5;
+    --violet: #6F5BD6;
+    --violet-soft: #ECE8FA;
+    --shadow: 0 1px 2px rgba(20,20,20,.04), 0 8px 24px rgba(20,20,20,.06);
+    --radius: 18px;
+    --radius-sm: 12px;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font-size: 14px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  a { color: inherit; }
+
+  .app { display: grid; grid-template-columns: 224px 1fr; height: 100vh; }
+
+  /* ---------------- sidebar ---------------- */
+  .side { background: var(--card); border-right: 1px solid var(--line); padding: 22px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
+  .brand .mark { width: 30px; height: 30px; border-radius: 9px; background: var(--ink); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; }
+  .brand .name { font-weight: 700; letter-spacing: .02em; font-size: 13px; text-transform: uppercase; }
+  .brand .sub { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .side .group { font-size: 10px; letter-spacing: .12em; color: var(--muted); text-transform: uppercase; padding: 12px 10px 4px; }
+  .nav { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; border: 0; background: transparent; text-align: left; width: 100%; color: var(--ink-2); }
+  .nav svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .nav:hover { background: var(--card-2); }
+  .nav.on { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+  .nav .badge { margin-left: auto; font-size: 11px; background: var(--red-soft); color: var(--red); padding: 2px 7px; border-radius: 999px; font-weight: 600; }
+  .side .spacer { flex: 1; }
+  .saved { background: var(--card-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; color: var(--muted); word-break: break-all; }
+  .saved b { color: var(--ink); display: block; font-size: 12px; margin-bottom: 2px; }
+  .saved.err b { color: var(--red); }
+
+  /* ---------------- main ---------------- */
+  .main { overflow: auto; padding: 28px 32px 40px; }
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+  .head h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .head p { margin: 0; color: var(--muted); }
+  .actions { display: flex; gap: 8px; }
+  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 9px 14px; font-weight: 600; font-size: 13px; box-shadow: 0 1px 1px rgba(0,0,0,.02); }
+  .btn:hover { background: var(--card-2); }
+  .btn.dark { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn.dark:hover { background: #333; }
+  .btn.danger { color: var(--red); }
+  .btn.sm { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .grid { display: grid; gap: 16px; }
+  .g-top { grid-template-columns: 1.3fr .9fr 1.6fr; }
+  .g-mid { grid-template-columns: 1.15fr 1fr; margin-top: 16px; }
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
+  .card h3 { margin: 0; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .card .ttl { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .card .ttl a { font-size: 12px; color: var(--muted); text-decoration: none; cursor: pointer; }
+  .card .ttl a:hover { color: var(--ink); }
+
+  .hero { position: relative; overflow: hidden; padding: 0; min-height: 168px; background: linear-gradient(160deg, #DCE9D2 0%, #B9D4B0 55%, #93BC93 100%); }
+  .hero svg.hills { position: absolute; inset: auto 0 0 0; width: 100%; height: 70%; }
+  .hero .date { position: absolute; left: 18px; bottom: 18px; background: rgba(255,255,255,.92); border-radius: 14px; padding: 10px 14px; text-align: center; box-shadow: var(--shadow); }
+  .hero .date b { display: block; font-size: 30px; line-height: 1; }
+  .hero .date span { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .hero .greet { position: absolute; top: 16px; left: 18px; right: 18px; font-size: 12px; color: #2F4A33; }
+
+  .ring-card { display: grid; place-items: center; text-align: center; }
+  .ring { position: relative; width: 120px; height: 120px; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .num { position: absolute; inset: 0; display: grid; place-items: center; font-size: 26px; font-weight: 700; }
+  .ring .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: stretch; }
+  .stat { background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 14px 12px; }
+  .stat h3 { font-size: 10px; }
+  .stat .v { font-size: 34px; font-weight: 700; line-height: 1.1; margin: 8px 0 4px; }
+  .stat .s { font-size: 11px; color: var(--muted); }
+  .stat.urgent .v { color: var(--red); } .stat.low .v { color: var(--amber); } .stat.ok .v { color: var(--green); }
+
+  .list { display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.urgent { background: var(--red); } .dot.low { background: var(--amber); } .dot.ok { background: var(--green); }
+  .row .t { flex: 1; min-width: 0; }
+  .row .t b { display: block; font-size: 13px; }
+  .row .t span { font-size: 12px; color: var(--muted); }
+  .row .r { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .mini { width: 42px; height: 42px; position: relative; flex: none; }
+  .mini svg { transform: rotate(-90deg); }
+  .mini span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  .empty { color: var(--muted); padding: 22px 6px; text-align: center; font-size: 13px; }
+
+  /* ---------------- inventory table ---------------- */
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar input[type=search], .toolbar select { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 12px; }
+  .toolbar input[type=search] { width: 240px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+  th.num, td.num { text-align: right; }
+  td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  tr.urgent td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+  tr.low td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+  td .cat { color: var(--muted); font-size: 12px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+  .pill.urgent { background: var(--red-soft); color: var(--red); } .pill.low { background: var(--amber-soft); color: var(--amber); } .pill.ok { background: var(--green-soft); color: var(--green); }
+  .qty { display: inline-flex; align-items: center; gap: 4px; }
+  .qty input { width: 64px; text-align: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--card-2); }
+  .qty input:focus { outline: 2px solid #CFE3D7; border-color: var(--green); background: #fff; }
+  .qty .btn { padding: 5px 8px; }
+  td.act { white-space: nowrap; text-align: right; }
+  .bar { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; width: 90px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .bar i { display: block; height: 100%; border-radius: 999px; background: var(--green); }
+  .bar.urgent i { background: var(--red); } .bar.low i { background: var(--amber); }
+
+  /* ---------------- needs ---------------- */
+  pre.needs { white-space: pre-wrap; font-family: Consolas, Menlo, monospace; font-size: 13px; line-height: 1.5; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 0 0 12px; }
+
+  /* ---------------- modal ---------------- */
+  .modal-bg { position: fixed; inset: 0; background: rgba(20,20,20,.35); display: none; place-items: center; z-index: 20; }
+  .modal-bg.on { display: grid; }
+  .modal { background: var(--card); border-radius: 20px; padding: 22px 24px; width: 440px; max-width: calc(100vw - 32px); box-shadow: 0 24px 60px rgba(0,0,0,.25); }
+  .modal h2 { margin: 0 0 14px; font-size: 18px; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .field label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--card-2); }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid #CFE3D7; border-color: var(--green); background: #fff; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 8px; }
+  .modal .foot .right { display: flex; gap: 8px; }
+  .err { color: var(--red); font-size: 12px; min-height: 16px; }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 13px; box-shadow: var(--shadow); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 30; }
+  .toast.on { opacity: 1; }
+  .toast.bad { background: var(--red); }
+  .view { display: none; } .view.on { display: block; }
+  @media (max-width: 1100px) { .g-top { grid-template-columns: 1fr 1fr; } .g-mid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="mark">SI</div>
+      <div><div class="name">Shelter Inventory</div><div class="sub" id="brandSub">Your shelter</div></div>
+    </div>
+    <div class="group">Workspace</div>
+    <button class="nav on" data-view="dash">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      Dashboard
+    </button>
+    <button class="nav" data-view="inv">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+      Inventory <span class="badge" id="navUrgent" hidden></span>
+    </button>
+    <button class="nav" data-view="needs">
+      <svg viewBox="0 0 24 24"><path d="M12 3v14m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+      What we need
+    </button>
+    <div class="group">Manage</div>
+    <button class="nav" id="navSettings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      Settings
+    </button>
+    <button class="nav" id="navFolder">
+      <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      Data folder
+    </button>
+    <div class="spacer"></div>
+    <div class="saved" id="savedBox"><b>Not saved yet</b><span id="savedPath"></span></div>
+  </aside>
+
+  <main class="main">
+    <!-- ============ DASHBOARD ============ -->
+    <section class="view on" id="view-dash">
+      <div class="head">
+        <div><h1 id="greeting">Good morning.</h1><p id="greetSub">Here's how your shelves look today.</p></div>
+        <div class="actions"><button class="btn" id="btnExport">Export CSV</button><button class="btn dark" id="btnAdd">+ New item</button></div>
+      </div>
+      <div class="grid g-top">
+        <div class="card hero">
+          <div class="greet" id="heroText"></div>
+          <svg class="hills" viewBox="0 0 400 120" preserveAspectRatio="none"><path d="M0 90 C60 40 120 40 180 75 C240 110 300 60 400 80 L400 120 L0 120 Z" fill="#7FA97E"/><path d="M0 105 C80 70 160 100 240 92 C320 84 360 100 400 95 L400 120 L0 120 Z" fill="#5C8C5F"/></svg>
+          <div class="date"><b id="dayNum">--</b><span id="monthTxt">---</span></div>
+        </div>
+        <div class="card ring-card">
+          <div class="ring">
+            <svg width="120" height="120" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" stroke="#ECEAE4" stroke-width="10" fill="none"/><circle id="ringArc" cx="60" cy="60" r="52" stroke="#2E7D5B" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/></svg>
+            <div class="num" id="ringNum">0%</div>
+          </div>
+          <div class="lbl">stocked</div>
+        </div>
+        <div class="card"><div class="stats">
+          <div class="stat urgent"><h3>Urgent</h3><div class="v" id="stUrgent">0</div><div class="s">below 50% of target</div></div>
+          <div class="stat low"><h3>Running low</h3><div class="v" id="stLow">0</div><div class="s">below 80% of target</div></div>
+          <div class="stat ok"><h3>Fine</h3><div class="v" id="stOk">0</div><div class="s" id="stTotal">of 0 items</div></div>
+        </div></div>
+      </div>
+      <div class="grid g-mid">
+        <div class="card">
+          <div class="ttl"><h3>Needs attention</h3><a data-view="inv">Full inventory →</a></div>
+          <div class="list" id="attention"></div>
+        </div>
+        <div class="card">
+          <div class="ttl"><h3>Categories</h3><a id="linkNeeds" data-view="needs">What we need →</a></div>
+          <div class="list" id="categories"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ INVENTORY ============ -->
+    <section class="view" id="view-inv">
+      <div class="head">
+        <div><h1>Inventory</h1><p id="invSub">Everything you have, against what you need.</p></div>
+        <div class="actions"><button class="btn" id="btnUndo" disabled>Undo</button><button class="btn dark" id="btnAdd2">+ New item</button></div>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <input type="search" id="q" placeholder="Search items…">
+          <select id="fCat"><option value="">All categories</option></select>
+          <select id="fShow"><option value="all">All items</option><option value="needs">Needs only</option><option value="urgent-only">Urgent only</option></select>
+          <select id="fSort"><option value="urgent">Most needed first</option><option value="name">Name A–Z</option><option value="qty">Lowest quantity</option></select>
+        </div>
+        <table>
+          <thead><tr><th data-sort="name">Item</th><th>Category</th><th class="num">Have</th><th class="num">Need</th><th data-sort="urgent">Level</th><th>Update</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="empty" id="invEmpty" hidden></div>
+      </div>
+    </section>
+
+    <!-- ============ NEEDS ============ -->
+    <section class="view" id="view-needs">
+      <div class="head">
+        <div><h1>What we need</h1><p>A list you can paste into an email, a Facebook post, or a donor flyer.</p></div>
+        <div class="actions"><button class="btn" id="btnNeedsSave">Save as text file</button><button class="btn dark" id="btnNeedsCopy">Copy to clipboard</button></div>
+      </div>
+      <div class="card"><pre class="needs" id="needsText"></pre></div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ MODALS ============ -->
+<div class="modal-bg" id="mItem"><div class="modal">
+  <h2 id="mItemTitle">New item</h2>
+  <div class="field"><label>Item name</label><input id="iName" placeholder="e.g. Tinned soup"></div>
+  <div class="field"><label>Category</label><select id="iCat"></select></div>
+  <div class="two">
+    <div class="field"><label>Have now</label><input id="iCurr" inputmode="numeric" placeholder="0"></div>
+    <div class="field"><label>Need (target)</label><input id="iTgt" inputmode="numeric" placeholder="e.g. 50"></div>
+  </div>
+  <div class="err" id="iErr"></div>
+  <div class="foot">
+    <button class="btn danger" id="iDelete" hidden>Delete item</button><span></span>
+    <div class="right"><button class="btn" data-close>Cancel</button><button class="btn dark" id="iSave">Save</button></div>
+  </div>
+</div></div>
+
+<div class="modal-bg" id="mSettings"><div class="modal">
+  <h2>Settings</h2>
+  <div class="field"><label>Charity / shelter name</label><input id="sName"></div>
+  <div class="field"><label>Categories (one per line)</label><textarea id="sCats" rows="6"></textarea></div>
+  <div class="two">
+    <div class="field"><label>Urgent below (% of target)</label><input id="sUrgent" inputmode="numeric"></div>
+    <div class="field"><label>Low below (% of target)</label><input id="sLow" inputmode="numeric"></div>
+  </div>
+  <div class="hint" id="sFolder"></div>
+  <div class="err" id="sErr"></div>
+  <div class="foot">
+    <button class="btn" id="sSamples">Load example items</button>
+    <div class="right"><button class="btn" data-close>Cancel</button><button class="btn dark" id="sSave">Save</button></div>
+  </div>
+</div></div>
+
+<div class="modal-bg" id="mWelcome"><div class="modal">
+  <h2>Welcome</h2>
+  <p class="hint" style="margin:0 0 12px">Your inventory will be saved automatically, on this computer, in <span id="wFolder"></span>.</p>
+  <div class="field"><label>What is your charity or shelter called?</label><input id="wName" placeholder="e.g. Hope House"></div>
+  <div class="foot"><span></span><div class="right"><button class="btn" id="wEmpty">Start empty</button><button class="btn dark" id="wSamples">Start with example items</button></div></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------------------------------------------------------------------
+// The page talks to Python through window.pywebview.api (see
+// shelter_inventory.py). When opened in a plain browser there is no
+// Python, so a small in-memory demo store stands in - handy for design work.
+// ---------------------------------------------------------------------
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+let state = null;
+let editingId = null;
+
+// ---- demo backend (browser preview only) -----------------------------
+const demo = (() => {
+  let items = [
+    {id:1,name:"Tinned soup",category:"Food",current_qty:12,target_qty:50},
+    {id:2,name:"Rice (1kg bags)",category:"Food",current_qty:5,target_qty:40},
+    {id:3,name:"Blankets",category:"Bedding",current_qty:30,target_qty:35},
+    {id:4,name:"Toothbrushes",category:"Hygiene",current_qty:8,target_qty:60},
+    {id:5,name:"Winter coats",category:"Clothing",current_qty:3,target_qty:20},
+    {id:6,name:"Shampoo",category:"Hygiene",current_qty:40,target_qty:50},
+    {id:7,name:"Washing powder",category:"Cleaning",current_qty:2,target_qty:15},
+    {id:8,name:"Socks",category:"Clothing",current_qty:25,target_qty:80},
+    {id:9,name:"Nappies (size 4)",category:"Hygiene",current_qty:4,target_qty:30},
+  ];
+  let next = 10, undo = [];
+  const settings = {charity_name:"Hope House", categories:["Food","Clothing","Bedding","Hygiene","Cleaning","Other"], urgent_below_percent:50, low_below_percent:80, setup_done:true};
+  const snap = (l) => { undo.push([l, JSON.parse(JSON.stringify(items)), next]); };
+  const st = () => ({ ok:true, items, settings, next_id:next, undo_label: undo.length ? undo[undo.length-1][0] : null,
+    last_saved: new Date().toTimeString().slice(0,8), data_file:"C:\\Users\\you\\Documents\\ShelterInventory\\inventory_data.json",
+    folder:"C:\\Users\\you\\Documents\\ShelterInventory", last_error:null, demo:true });
+  return {
+    get_state: async () => st(),
+    add_item: async (n,c,cu,t) => { if(!n.trim()) return {ok:false,error:"Please enter an item name."}; snap(`add '${n}'`); items.push({id:next++,name:n.trim(),category:c,current_qty:+cu||0,target_qty:+t||1}); return st(); },
+    set_quantity: async (id,q) => { const it=items.find(i=>i.id==id); if(!it) return st(); if(isNaN(+q)||+q<0) return {ok:false,error:"Quantity must be 0 or more."}; snap(`change '${it.name}' quantity`); it.current_qty=+q; return st(); },
+    update_item: async (id,n,c,cu,t) => { const it=items.find(i=>i.id==id); snap(`edit '${it.name}'`); Object.assign(it,{name:n,category:c,current_qty:+cu,target_qty:+t}); return st(); },
+    delete_item: async (id) => { const it=items.find(i=>i.id==id); snap(`delete '${it.name}'`); items=items.filter(i=>i.id!=id); return st(); },
+    undo: async () => { const u=undo.pop(); if(u){ items=u[1]; next=u[2]; } return st(); },
+    save_settings: async (s) => { Object.assign(settings,s); return st(); },
+    load_samples: async () => st(),
+    needs_list: async () => "Hope House - What we need - " + new Date().toDateString() + "\n\n(demo)",
+    export_csv: async () => ({ok:true, path:"(demo)"}),
+    save_needs: async () => ({ok:true, path:"(demo)"}),
+    open_folder: async () => ({ok:true}),
+    copied: async () => ({ok:true}),
+  };
+})();
+const api = () => (window.pywebview && window.pywebview.api) ? window.pywebview.api : demo;
+
+// ---- helpers ------------------------------------------------------------
+function statusOf(it) {
+  const u = state.settings.urgent_below_percent, l = state.settings.low_below_percent;
+  if (it.target_qty <= 0) return "ok";
+  const p = it.current_qty / it.target_qty * 100;
+  return p < u ? "urgent" : p < l ? "low" : "ok";
+}
+const pct = (it) => it.target_qty <= 0 ? 100 : Math.min(100, Math.round(it.current_qty / it.target_qty * 100));
+const word = {urgent:"Urgent", low:"Low", ok:"Fine"};
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg, bad) { const t=$("#toast"); t.textContent=msg; t.className="toast on"+(bad?" bad":""); clearTimeout(t._h); t._h=setTimeout(()=>t.className="toast", 2600); }
+function ringSvg(p, size, color) { const r=(size/2)-4, c=2*Math.PI*r; return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" stroke="#ECEAE4" stroke-width="5" fill="none"/><circle cx="${size/2}" cy="${size/2}" r="${r}" stroke="${color}" stroke-width="5" fill="none" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-p/100)}"/></svg>`; }
+const colorOf = {urgent:"#B4372B", low:"#B8730F", ok:"#2E7D5B"};
+
+async function call(name, ...args) {
+  let res;
+  try { res = await api()[name](...args); } catch (e) { toast("Something went wrong: " + e, true); return null; }
+  if (res && res.ok === false) { return res; }
+  if (res && res.items) { state = res; render(); }
+  return res;
+}
+
+// ---- render -------------------------------------------------------------
+function render() {
+  const s = state, items = s.items;
+  const counts = {urgent:0, low:0, ok:0};
+  items.forEach(i => counts[statusOf(i)]++);
+  const name = s.settings.charity_name || "Your shelter";
+  $("#brandSub").textContent = name;
+  document.title = name + " - Shelter Inventory";
+
+  // sidebar save box
+  const box = $("#savedBox");
+  if (s.last_error) { box.className = "saved err"; box.innerHTML = `<b>Not saved</b>${esc(s.last_error)}`; }
+  else if (s.last_saved) { box.className = "saved"; box.innerHTML = `<b>Saved ${esc(s.last_saved)}</b>${esc(s.data_file)}`; }
+  else { box.className = "saved"; box.innerHTML = `<b>Saves automatically</b>${esc(s.data_file)}`; }
+  $("#navUrgent").hidden = !counts.urgent; $("#navUrgent").textContent = counts.urgent;
+
+  // dashboard
+  const now = new Date(), h = now.getHours();
+  $("#greeting").textContent = h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening.";
+  $("#dayNum").textContent = now.getDate();
+  $("#monthTxt").textContent = now.toLocaleString("en", {month:"long", year:"numeric"});
+  $("#heroText").textContent = name;
+  const stocked = items.length ? Math.round(items.reduce((a,i)=>a+pct(i),0)/items.length) : 0;
+  $("#ringNum").textContent = stocked + "%";
+  $("#ringArc").setAttribute("stroke-dashoffset", (326.7 * (1 - stocked/100)).toFixed(1));
+  $("#ringArc").setAttribute("stroke", stocked < 50 ? "#B4372B" : stocked < 80 ? "#B8730F" : "#2E7D5B");
+  $("#stUrgent").textContent = counts.urgent; $("#stLow").textContent = counts.low; $("#stOk").textContent = counts.ok;
+  $("#stTotal").textContent = `of ${items.length} item${items.length===1?"":"s"}`;
+  $("#greetSub").textContent = counts.urgent ? `${counts.urgent} item${counts.urgent===1?" needs":"s need"} attention today.` : items.length ? "Everything is in reasonable shape today." : "Add your first item to get started.";
+
+  const need = items.filter(i => statusOf(i) !== "ok").sort((a,b) => pct(a)-pct(b)).slice(0, 6);
+  $("#attention").innerHTML = need.length ? need.map(i => { const st=statusOf(i); return `<div class="row"><span class="dot ${st}"></span><div class="t"><b>${esc(i.name)}</b><span>${esc(i.category)} · need ${i.target_qty-i.current_qty} more</span></div><div class="r">${i.current_qty} of ${i.target_qty}</div></div>`; }).join("")
+    : `<div class="empty">${items.length ? "Nothing is running low. Nice." : "No items yet — press <b>+ New item</b>."}</div>`;
+
+  const cats = {};
+  items.forEach(i => { (cats[i.category] = cats[i.category] || []).push(i); });
+  $("#categories").innerHTML = Object.keys(cats).length ? Object.entries(cats).sort().map(([c, list]) => {
+    const avg = Math.round(list.reduce((a,i)=>a+pct(i),0)/list.length);
+    const worst = list.some(i=>statusOf(i)==="urgent") ? "urgent" : list.some(i=>statusOf(i)==="low") ? "low" : "ok";
+    return `<div class="row"><div class="t"><b>${esc(c)}</b><span>${list.length} item${list.length===1?"":"s"} · ${list.filter(i=>statusOf(i)!=="ok").length} need topping up</span></div><div class="mini">${ringSvg(avg, 42, colorOf[worst])}<span>${avg}%</span></div></div>`;
+  }).join("") : `<div class="empty">Categories appear here once you have items.</div>`;
+
+  // inventory
+  const catSel = $("#fCat"); const chosen = catSel.value;
+  const allCats = [...new Set([...s.settings.categories, ...items.map(i=>i.category)])];
+  catSel.innerHTML = `<option value="">All categories</option>` + allCats.map(c=>`<option ${c===chosen?"selected":""}>${esc(c)}</option>`).join("");
+  $("#iCat").innerHTML = allCats.map(c=>`<option>${esc(c)}</option>`).join("");
+  renderRows();
+  $("#btnUndo").disabled = !s.undo_label;
+  $("#btnUndo").textContent = s.undo_label ? `Undo ${s.undo_label}` : "Undo";
+  $("#invSub").textContent = `${items.length} item${items.length===1?"":"s"} · ${counts.urgent} urgent · ${counts.low} low · ${counts.ok} fine`;
+}
+
+function renderRows() {
+  const q = $("#q").value.trim().toLowerCase(), cat = $("#fCat").value, show = $("#fShow").value, sort = $("#fSort").value;
+  const order = {urgent:0, low:1, ok:2};
+  let list = state.items.filter(i => (!cat || i.category===cat) && (!q || i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)));
+  if (show === "needs") list = list.filter(i => statusOf(i) !== "ok");
+  if (show === "urgent-only") list = list.filter(i => statusOf(i) === "urgent");
+  if (sort === "name") list.sort((a,b)=>a.name.localeCompare(b.name));
+  else if (sort === "qty") list.sort((a,b)=>a.current_qty-b.current_qty || a.name.localeCompare(b.name));
+  else list.sort((a,b)=>order[statusOf(a)]-order[statusOf(b)] || pct(a)-pct(b) || a.name.localeCompare(b.name));
+  $("#rows").innerHTML = list.map(i => { const st=statusOf(i), p=pct(i); return `<tr class="${st}" data-id="${i.id}">
+    <td><b>${esc(i.name)}</b></td><td class="cat">${esc(i.category)}</td>
+    <td class="num">${i.current_qty}</td><td class="num">${i.target_qty}</td>
+    <td><span class="bar ${st}"><i style="width:${p}%"></i></span><span class="pill ${st}">${word[st]} · ${p}%</span></td>
+    <td><span class="qty"><input value="${i.current_qty}" data-qty="${i.id}" inputmode="numeric"><button class="btn sm" data-save="${i.id}">Save</button></span></td>
+    <td class="act"><button class="btn sm" data-edit="${i.id}">Edit</button></td></tr>`; }).join("");
+  const e = $("#invEmpty");
+  e.hidden = list.length > 0;
+  e.innerHTML = state.items.length ? "No items match this search or filter." : "No items yet — press <b>+ New item</b>, or load example items under Settings.";
+}
+
+// ---- views ---------------------------------------------------------------
+function showView(v) {
+  $$(".view").forEach(x => x.classList.toggle("on", x.id === "view-" + v));
+  $$(".nav[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  if (v === "needs") loadNeeds();
+  if (v === "inv") setTimeout(() => $("#q").focus(), 50);
+}
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest("[data-view]"); if (t) showView(t.dataset.view);
+});
+
+// ---- modals --------------------------------------------------------------
+function openModal(id) { $(id).classList.add("on"); const f = $(id).querySelector("input,textarea"); if (f) setTimeout(()=>f.focus(), 30); }
+function closeModals() { $$(".modal-bg").forEach(m => m.classList.remove("on")); }
+$$("[data-close]").forEach(b => b.addEventListener("click", closeModals));
+$$(".modal-bg").forEach(m => m.addEventListener("click", (e) => { if (e.target === m) closeModals(); }));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeModals();
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !$$(".modal-bg.on").length) { e.preventDefault(); doUndo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); showView("inv"); }
+});
+
+function openItem(item) {
+  editingId = item ? item.id : null;
+  $("#mItemTitle").textContent = item ? "Edit item" : "New item";
+  $("#iName").value = item ? item.name : "";
+  $("#iCat").value = item ? item.category : $("#iCat").options[0]?.value || "";
+  $("#iCurr").value = item ? item.current_qty : "";
+  $("#iTgt").value = item ? item.target_qty : "";
+  $("#iErr").textContent = "";
+  $("#iDelete").hidden = !item;
+  openModal("#mItem");
+}
+$("#btnAdd").addEventListener("click", () => openItem(null));
+$("#btnAdd2").addEventListener("click", () => openItem(null));
+$("#iSave").addEventListener("click", saveItem);
+$("#mItem").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveItem(); } });
+async function saveItem() {
+  const n=$("#iName").value, c=$("#iCat").value, cu=$("#iCurr").value, t=$("#iTgt").value;
+  const res = editingId == null ? await call("add_item", n, c, cu, t) : await call("update_item", editingId, n, c, cu, t);
+  if (res && res.ok === false) { $("#iErr").textContent = res.error; return; }
+  closeModals(); toast(editingId == null ? "Item added" : "Saved");
+}
+$("#iDelete").addEventListener("click", async () => {
+  const it = state.items.find(i => i.id === editingId);
+  if (!it || !confirm(`Delete '${it.name}'? You can bring it back with Undo.`)) return;
+  const res = await call("delete_item", editingId);
+  if (res && res.ok === false) { $("#iErr").textContent = res.error; return; }
+  closeModals(); toast("Deleted — Undo is in the Inventory toolbar");
+});
+
+// ---- inventory interactions ---------------------------------------------
+["#q", "#fCat", "#fShow", "#fSort"].forEach(s => $(s).addEventListener("input", renderRows));
+$("#rows").addEventListener("click", async (e) => {
+  const s = e.target.closest("[data-save]"); if (s) { await saveQty(+s.dataset.save); return; }
+  const ed = e.target.closest("[data-edit]"); if (ed) { openItem(state.items.find(i => i.id === +ed.dataset.edit)); }
+});
+$("#rows").addEventListener("keydown", async (e) => {
+  const inp = e.target.closest("[data-qty]"); if (inp && e.key === "Enter") { await saveQty(+inp.dataset.qty); }
+});
+async function saveQty(id) {
+  const inp = $(`[data-qty="${id}"]`); const res = await call("set_quantity", id, inp.value);
+  if (res && res.ok === false) { toast(res.error, true); inp.focus(); return; }
+  toast("Quantity saved");
+}
+$$("th[data-sort]").forEach(th => th.addEventListener("click", () => { $("#fSort").value = th.dataset.sort; renderRows(); }));
+async function doUndo() { if (!state.undo_label) return; const l = state.undo_label; const r = await call("undo"); if (r && r.ok !== false) toast("Undid " + l); }
+$("#btnUndo").addEventListener("click", doUndo);
+
+// ---- needs list -----------------------------------------------------------
+async function loadNeeds() { $("#needsText").textContent = await api().needs_list(); }
+$("#btnNeedsCopy").addEventListener("click", async () => {
+  const text = $("#needsText").textContent;
+  try { await navigator.clipboard.writeText(text); toast("Copied — paste it anywhere"); }
+  catch (e) { const r = await api().copied(text); toast(r && r.ok ? "Copied — paste it anywhere" : "Could not copy", !(r && r.ok)); }
+});
+$("#btnNeedsSave").addEventListener("click", async () => { const r = await api().save_needs(); if (r && r.ok) toast("Saved: " + r.path); else if (r && r.error) toast(r.error, true); });
+$("#btnExport").addEventListener("click", async () => { const r = await api().export_csv(); if (r && r.ok) toast("Exported: " + r.path); else if (r && r.error) toast(r.error, true); });
+$("#navFolder").addEventListener("click", async () => { const r = await api().open_folder(); if (r && r.error) toast(r.error, true); });
+
+// ---- settings --------------------------------------------------------------
+$("#navSettings").addEventListener("click", () => {
+  const s = state.settings;
+  $("#sName").value = s.charity_name || ""; $("#sCats").value = s.categories.join("\n");
+  $("#sUrgent").value = s.urgent_below_percent; $("#sLow").value = s.low_below_percent;
+  $("#sFolder").textContent = "Your data folder: " + state.folder; $("#sErr").textContent = "";
+  openModal("#mSettings");
+});
+$("#sSave").addEventListener("click", async () => {
+  const cats = $("#sCats").value.split("\n").map(x => x.trim()).filter(Boolean);
+  const u = parseInt($("#sUrgent").value, 10), l = parseInt($("#sLow").value, 10);
+  if (!cats.length) { $("#sErr").textContent = "Keep at least one category."; return; }
+  if (!(u >= 1 && u < l && l <= 100)) { $("#sErr").textContent = "Urgent must be below Low, both between 1 and 100."; return; }
+  const res = await call("save_settings", {charity_name: $("#sName").value.trim(), categories: cats, urgent_below_percent: u, low_below_percent: l});
+  if (res && res.ok === false) { $("#sErr").textContent = res.error; return; }
+  closeModals(); toast("Settings saved");
+});
+$("#sSamples").addEventListener("click", async () => { const r = await call("load_samples"); if (r && r.ok !== false) { closeModals(); toast("Example items added"); } });
+
+// ---- first run ------------------------------------------------------------
+async function firstRun() {
+  $("#wFolder").textContent = state.folder;
+  openModal("#mWelcome");
+  const finish = async (samples) => {
+    const name = $("#wName").value.trim();
+    await call("save_settings", {charity_name: name, setup_done: true});
+    if (samples) await call("load_samples");
+    closeModals();
+  };
+  $("#wSamples").onclick = () => finish(true);
+  $("#wEmpty").onclick = () => finish(false);
+}
+
+// ---- boot -------------------------------------------------------------------
+async function boot() {
+  const s = await api().get_state();
+  state = s; render();
+  if (!s.settings.setup_done && !s.demo) firstRun();
+}
+if (window.pywebview) boot(); else window.addEventListener("pywebviewready", boot);
+setTimeout(() => { if (!state) boot(); }, 400);   // plain-browser preview
+</script>
+</body>
+</html>

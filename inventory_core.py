@@ -44,7 +44,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "Shelter Inventory Manager"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.4.0"
 APP_FOLDER_NAME = "ShelterInventory"
 
 # Where people can download the app. Shown at the bottom of the
@@ -69,6 +69,8 @@ DEFAULT_SETTINGS = {
     "low_below_percent": 80,
     # Set to True the first time the window has finished its welcome step.
     "setup_done": False,
+    # Which skin the window uses: native, paper, clinic, bigprint or slate.
+    "theme": "native",
 }
 
 SAMPLE_ITEMS = [
@@ -370,6 +372,7 @@ class Store:
             base["low_below_percent"] = min(100, base["urgent_below_percent"] + 1)
         base["charity_name"] = str(base.get("charity_name") or "").strip()[:80]
         base["setup_done"] = bool(base.get("setup_done"))
+        base["theme"] = str(base.get("theme") or "native").strip()[:20]
         self.settings = base
 
     @staticmethod

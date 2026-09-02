@@ -26,7 +26,7 @@ if errorlevel 1 (
 
 echo.
 echo  [2/3] Installing PyInstaller (only the first time)...
-py -m pip install --quiet --upgrade pyinstaller
+py -m pip install --quiet --upgrade pyinstaller pywebview
 if errorlevel 1 (
     echo  Could not install PyInstaller. Are you online?
     pause
@@ -39,6 +39,8 @@ py -m PyInstaller --noconfirm --clean --onefile --windowed ^
     --name ShelterInventory ^
     --icon icon.ico ^
     --add-data "icon.ico;." ^
+    --add-data "webui;webui" ^
+    --hidden-import shelter_inventory_classic ^
     shelter_inventory.py
 if errorlevel 1 (
     echo  Build FAILED - read the messages above.
