@@ -10,3 +10,7 @@ inventory_data.json
 inventory_data.bak
 settings.json
 log.txt
+PUBLISH PROMPT*.md
+PUBLISH_REPORT*.md
+PUBLISH TO GITHUB*.cmd
+dev/ui_*.py
