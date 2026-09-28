@@ -33,6 +33,40 @@ class TempFolderTest(unittest.TestCase):
         return s
 
 
+def tiny_xlsx(path, rows):
+    """Write a minimal .xlsx by hand (inline strings + numbers) - no library.
+    This is what a charity's Excel file looks like inside the zip."""
+    import zipfile
+    def col(n):
+        out = ""
+        while n >= 0:
+            out = chr(65 + n % 26) + out
+            n = n // 26 - 1
+        return out
+    cells = []
+    for r, row in enumerate(rows, start=1):
+        parts = []
+        for c, val in enumerate(row):
+            ref = f"{col(c)}{r}"
+            if isinstance(val, (int, float)):
+                parts.append(f'<c r="{ref}"><v>{val}</v></c>')
+            elif val is None or val == "":
+                continue
+            else:
+                parts.append(f'<c r="{ref}" t="inlineStr"><is><t>{val}</t></is></c>')
+        cells.append(f'<row r="{r}">{"".join(parts)}</row>')
+    sheet = ('<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+             f'<sheetData>{"".join(cells)}</sheetData></worksheet>')
+    wb = ('<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+          'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Stock" sheetId="1" r:id="rId1"/></sheets></workbook>')
+    rels = ('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("xl/workbook.xml", wb)
+        z.writestr("xl/_rels/workbook.xml.rels", rels)
+        z.writestr("xl/worksheets/sheet1.xml", sheet)
+
+
 # ---------------------------------------------------------------- algorithms
 
 class AlgorithmTests(unittest.TestCase):
@@ -96,6 +130,175 @@ class AlgorithmTests(unittest.TestCase):
 
 
 # ------------------------------------------------------------- persistence
+
+class ExpiryTests(TempFolderTest):
+    def test_parse_date_accepts_what_people_write(self):
+        d = dt.date(2026, 3, 31)
+        for text in ("2026-03-31", "31/03/2026", "31-03-2026", "31.3.2026", "31 Mar 2026", "31 March 2026", " 2026/03/31 "):
+            self.assertEqual(core.parse_date(text), d, text)
+        self.assertEqual(core.parse_date("Mar 2026"), d)             # month only -> last day
+        self.assertEqual(core.parse_date("46112"), d)                # Excel serial number
+        self.assertEqual(core.parse_date(d), d)
+        for bad in ("", None, "soon", "31/13/2026", "12"):
+            self.assertIsNone(core.parse_date(bad), bad)
+
+    def test_validate_expiry_blank_is_fine_nonsense_is_not(self):
+        self.assertEqual(core.validate_expiry(""), (True, ""))
+        self.assertEqual(core.validate_expiry(None), (True, ""))
+        self.assertTrue(core.validate_expiry("2027-01-01")[0])
+        ok, msg = core.validate_expiry("next week")
+        self.assertFalse(ok)
+        self.assertIn("2026-03-31", msg)
+
+    def test_expiry_status_tiers(self):
+        today = dt.date(2026, 6, 1)
+        self.assertEqual(core.expiry_status("", today), "")
+        self.assertEqual(core.expiry_status("2026-05-31", today), "expired")
+        self.assertEqual(core.expiry_status("2026-06-01", today), "soon")       # today counts as soon
+        self.assertEqual(core.expiry_status("2026-07-01", today, 30), "soon")
+        self.assertEqual(core.expiry_status("2026-07-02", today, 30), "")
+        self.assertEqual(core.expiry_status("2026-07-02", today, 60), "soon")
+
+    def test_expiry_is_saved_normalised_and_survives_reopen(self):
+        s = self.store()
+        s.add_item("UHT milk", "Food", 5, 10, "31/12/2027")
+        s.add_item("Socks", "Clothing", 5, 10)
+        again = self.store()
+        milk = next(i for i in again.items if i["name"] == "UHT milk")
+        socks = next(i for i in again.items if i["name"] == "Socks")
+        self.assertEqual(milk["expires"], "2027-12-31")
+        self.assertEqual(socks["expires"], "")
+
+    def test_add_with_bad_date_is_refused(self):
+        s = self.store()
+        with self.assertRaises(ValueError):
+            s.add_item("Milk", "Food", 1, 2, "someday")
+        self.assertEqual(s.items, [])
+
+    def test_update_none_keeps_date_and_blank_clears_it(self):
+        s = self.store()
+        item = s.add_item("Milk", "Food", 1, 2, "2027-01-01")
+        s.update_item(item["id"], "Milk", "Food", 3, 4)                # classic window: no date arg
+        self.assertEqual(s.find(item["id"])["expires"], "2027-01-01")
+        s.update_item(item["id"], "Milk", "Food", 3, 4, "")
+        self.assertEqual(s.find(item["id"])["expires"], "")
+        s.update_item(item["id"], "Milk", "Food", 3, 4, "1 Jan 2028")
+        self.assertEqual(s.find(item["id"])["expires"], "2028-01-01")
+
+    def test_counts_include_expiry_and_settings_control_the_window(self):
+        s = self.store()
+        soon = (dt.date.today() + dt.timedelta(days=10)).isoformat()
+        far = (dt.date.today() + dt.timedelta(days=100)).isoformat()
+        s.add_item("A", "Food", 1, 1, "2000-01-01")
+        s.add_item("B", "Food", 1, 1, soon)
+        s.add_item("C", "Food", 1, 1, far)
+        s.add_item("D", "Food", 1, 1)
+        c = s.counts()
+        self.assertEqual((c["expired"], c["soon"]), (1, 1))
+        s.settings["expiry_warn_days"] = 120
+        self.assertEqual(s.counts()["soon"], 2)
+
+    def test_old_files_without_expires_still_load(self):
+        s = self.store()
+        s.add_item("Socks", "Clothing", 1, 2)
+        payload = json.loads(s.data_file.read_text(encoding="utf-8"))
+        for item in payload["items"]:
+            del item["expires"]
+        s.data_file.write_text(json.dumps(payload), encoding="utf-8")
+        again = self.store()
+        self.assertEqual(again.items[0]["expires"], "")
+
+    def test_sample_items_include_one_live_use_by_example(self):
+        s = self.store()
+        s.load_sample_items()
+        dated = [i for i in s.items if i["expires"]]
+        self.assertEqual(len(dated), 1)
+        self.assertEqual(s.expiry_of(dated[0]), "soon")
+
+    def test_csv_export_has_expires_column(self):
+        s = self.store()
+        s.add_item("Milk", "Food", 1, 2, "2027-01-01")
+        text = core.inventory_csv(s)
+        self.assertIn("expires", text.splitlines()[0])
+        self.assertIn("2027-01-01", text)
+
+
+class ImportTests(TempFolderTest):
+    def test_guess_columns_from_friendly_headers(self):
+        m = core.guess_columns(["Item", "Type", "Qty", "Target", "Best before"])
+        self.assertEqual(m, {"name": 0, "category": 1, "current_qty": 2, "target_qty": 3, "expires": 4})
+        m = core.guess_columns(["Description", "In stock", "Par level"])
+        self.assertEqual(m, {"name": 0, "current_qty": 1, "target_qty": 2})
+        self.assertEqual(core.guess_columns(["Foo", "Bar"]), {})
+
+    def test_parse_table_with_headers_and_problems(self):
+        table = [["Item", "Category", "Have", "Need", "Use by"],
+                 ["Beans", "Food", "12", "40", "31/03/2027"],
+                 ["Soap", "Hygiene", "x", "", ""],
+                 ["Beans", "Food", "1", "1", ""],
+                 ["", "", "", "", ""],
+                 ["Tea", "Food", "1,200", "2000", "when?"]]
+        r = core.parse_import_table(table)
+        names = [x["name"] for x in r["rows"]]
+        self.assertEqual(names, ["Beans", "Soap", "Tea"])
+        self.assertEqual(r["rows"][0]["expires"], "2027-03-31")
+        self.assertEqual((r["rows"][1]["current_qty"], r["rows"][1]["target_qty"]), (0, 1))
+        self.assertEqual(r["rows"][2]["current_qty"], 1200)
+        self.assertEqual(r["rows"][2]["expires"], "")
+        self.assertEqual(len(r["problems"]), 3)
+        self.assertTrue(any("appears twice" in p for p in r["problems"]))
+        self.assertTrue(any("use-by date" in p for p in r["problems"]))
+
+    def test_parse_table_without_headers_assumes_name_have_need(self):
+        r = core.parse_import_table([["Beans", "12", "40"], ["Rice", "3", "20"]])
+        self.assertEqual(r["rows"][1], {"name": "Rice", "category": "Other", "current_qty": 3, "target_qty": 20, "expires": ""})
+        r = core.parse_import_table([["Beans", "Food", "12", "40"]])
+        self.assertEqual(r["rows"][0]["category"], "Food")
+
+    def test_parse_table_refuses_when_no_name_column(self):
+        r = core.parse_import_table([["Colour", "Size"], ["red", "L"]])
+        self.assertEqual(r["rows"], [])
+        self.assertIn("item-name column", r["problems"][0])
+        self.assertEqual(core.parse_import_table([])["problems"], ["The file is empty."])
+
+    def test_csv_semicolons_tabs_and_bom(self):
+        self.assertEqual(core.read_csv_table("\ufeffname;qty;target\nBeans;1;2\n"), [["name", "qty", "target"], ["Beans", "1", "2"]])
+        self.assertEqual(core.read_csv_table("name\tqty\nBeans\t1\n"), [["name", "qty"], ["Beans", "1"]])
+        self.assertEqual(core.read_csv_table('name,qty\n"Beans, baked",1\n'), [["name", "qty"], ["Beans, baked", "1"]])
+
+    def test_read_table_file_handles_windows_encoding_and_xlsx(self):
+        csv_path = self.tmp / "list.csv"
+        csv_path.write_bytes("Item,Have,Need\nCaf\xe9 pods,2,10\n".encode("cp1252"))
+        self.assertEqual(core.read_table_file(csv_path)[1][0], "Café pods")
+        xlsx = self.tmp / "stock.xlsx"
+        tiny_xlsx(xlsx, [["Item", "Type", "Quantity", "Target", "Best before"],
+                         ["Tinned beans", "Food", 12, 40, 46357],
+                         ["Soap", "Hygiene", 3, 20, None]])
+        table = core.read_table_file(xlsx)
+        r = core.parse_import_table(table)
+        self.assertEqual(r["rows"][0]["expires"], "2026-12-01")
+        self.assertEqual(r["rows"][1], {"name": "Soap", "category": "Hygiene", "current_qty": 3, "target_qty": 20, "expires": ""})
+        with self.assertRaises(ValueError):
+            core.read_table_file(self.tmp / "old.xls")
+
+    def test_import_rows_skip_update_and_undo(self):
+        s = self.store()
+        s.add_item("Beans", "Food", 1, 5)
+        rows = core.parse_import_table([["Item", "Have", "Need"], ["Beans", "9", "50"], ["Rice", "2", "20"]])["rows"]
+        summary = s.import_rows(rows, "skip")
+        self.assertEqual(summary, {"added": 1, "updated": 0, "skipped": 1})
+        self.assertEqual(s.find(1)["current_qty"], 1)
+        summary = s.import_rows(rows, "update")          # Rice is there now too
+        self.assertEqual(summary, {"added": 0, "updated": 2, "skipped": 0})
+        self.assertEqual((s.find(1)["current_qty"], s.find(1)["target_qty"]), (9, 50))
+        self.assertEqual(s.undo(), "import from spreadsheet")
+        self.assertEqual(s.find(1)["current_qty"], 1)
+        self.assertTrue(s.name_taken("Rice"))
+        with self.assertRaises(ValueError):
+            s.import_rows(rows, "merge")
+        again = self.store()
+        self.assertEqual(len(again.items), 2)
+
 
 class PersistenceTests(TempFolderTest):
     def test_fresh_folder_starts_empty_and_creates_file_on_first_save(self):
@@ -436,6 +639,40 @@ class ApiTests(TempFolderTest):
         s = self.store().settings
         self.assertEqual((s["charity_name"], s["categories"], s["urgent_below_percent"], s["setup_done"]),
                          ("Hope House", ["Pet food", "Litter"], 30, True))
+
+    def test_import_preview_and_commit_through_the_api(self):
+        api = self.api()
+        path = self.tmp / "stock.csv"
+        path.write_text("Item,Category,Have,Need,Use by\nBeans,Food,12,40,31/03/2027\nSoap,Hygiene,3,20,\n", encoding="utf-8")
+        api.store.add_item("Soap", "Hygiene", 1, 1)
+        prev = api.preview_import(str(path))
+        self.assertTrue(prev["ok"])
+        self.assertEqual(prev["total"], 2)
+        self.assertEqual(prev["duplicates"], 1)
+        self.assertEqual(prev["mapping"]["current_qty"], "Have")
+        self.assertEqual(prev["sample"][0]["expires"], "2027-03-31")
+        self.assertEqual(len(api.store.items), 1, "preview must not change anything")
+        res = api.import_file(str(path), "skip")
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["import"], {"added": 1, "updated": 0, "skipped": 1})
+        self.assertEqual(len(res["items"]), 2)
+        bad = api.preview_import(str(self.tmp / "missing.csv"))
+        self.assertFalse(bad["ok"])
+        self.assertIn("Could not read", bad["error"])
+        self.assertEqual(api.pick_import_file(), {"ok": False}, "no window -> no dialog, no crash")
+
+    def test_expiry_through_the_api(self):
+        api = self.api()
+        res = api.add_item("Milk", "Food", 1, 2, "1/1/2028")
+        self.assertEqual(res["items"][0]["expires"], "2028-01-01")
+        self.assertIn("today", res)
+        res = api.add_item("Bread", "Food", 1, 2, "soonish")
+        self.assertFalse(res["ok"])
+        self.assertIn("Use-by date", res["error"])
+        res = api.save_settings({"expiry_warn_days": 400})
+        self.assertFalse(res["ok"])
+        res = api.save_settings({"expiry_warn_days": 14})
+        self.assertEqual(res["settings"]["expiry_warn_days"], 14)
 
     def test_needs_list_and_no_dialog_without_window(self):
         a = self.api()

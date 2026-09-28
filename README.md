@@ -22,8 +22,9 @@ for donors. Everything stays on your own computer.
    (That warning appears for any small free program that has not paid for a
    code-signing certificate. The program is open source - anyone can read
    exactly what it does in this repository.)
-3. Type your charity's name when asked. Choose whether to start with a few
-   example items. That is it.
+3. Type your charity's name when asked. Then either start with a few example
+   items, start empty, or **Import my existing list** if you already keep one
+   in Excel or a CSV. That is it.
 
 **Mac**
 
@@ -39,8 +40,19 @@ on Windows, or run `python3 shelter_inventory.py` on Mac/Linux.
 
 - **Dashboard**: how stocked you are overall, what needs attention, and each
   category at a glance.
+- **Import your existing list**: **Import spreadsheet** (dashboard, or under
+  Settings) opens your Excel (.xlsx) or CSV file. The app works out which
+  column is the item name, which is what you have, which is the target and
+  which is the use-by date, shows you what it understood, and only then
+  imports. Items already in your inventory are left alone unless you choose
+  **Add & update existing**. Undo brings back the state before the import.
 - **Add an item**: **+ New item** — name, category, what you *have* and what
-  you *need* (the target).
+  you *need* (the target), and an optional **use-by** date.
+- **Use-by dates**: items that are expired, or expire within the next 30 days
+  (change the number under Settings), get a purple **Use-by** count on the
+  dashboard, appear at the top of *Needs attention*, and show a badge in the
+  Inventory table. Sort by *Use-by date* or filter *Use-by soon or expired*
+  to see them together.
 - **Update stock**: on the Inventory page, type the new count in the row and
   press Enter or **Save**.
 - **Edit / rename / delete**: **Edit** on the row. Delete asks first, and
@@ -52,8 +64,9 @@ on Windows, or run `python3 shelter_inventory.py` on Mac/Linux.
 - **What we need**: a plain-text list of everything urgent or low, most-needed
   first. Copy it into an email, a Facebook post, or print it for a donation drive.
 - **Settings**: charity name, your own categories (one per line), the two
-  thresholds, and a button to load the example items. **Data folder** opens
-  the folder where everything is saved.
+  thresholds, how many days ahead to warn about use-by dates, and buttons to
+  import a spreadsheet or load the example items. **Data folder** opens the
+  folder where everything is saved.
 
 The app draws its screen with the web engine already on your computer (Edge
 on Windows, Safari on a Mac) — it still needs no internet. On a very old
@@ -117,7 +130,7 @@ Python 3 plus one package, `pywebview` (the window). The data layer is standard 
 
 ```
 pip install pywebview
-python tests.py            # 40 tests, no window, nothing outside a temp folder
+python tests.py            # 59 tests, no window, nothing outside a temp folder
 python shelter_inventory.py
 ```
 
@@ -126,11 +139,11 @@ Open `webui/index.html` in any browser to work on the design with sample data
 
 | File | What it does |
 |---|---|
-| `inventory_core.py` | Data folder, safe saving, backups, undo, the urgent/low/ok logic, CSV and needs-list exports. No GUI code. |
+| `inventory_core.py` | Data folder, safe saving, backups, undo, the urgent/low/ok logic, use-by dates, CSV/Excel import (standard library only), CSV and needs-list exports. No GUI code. |
 | `shelter_inventory.py` | The window: opens `webui/index.html` with pywebview and exposes `Api` to it. |
 | `webui/index.html` | The whole interface — styles, scripts, icons — in one file. No internet. |
 | `shelter_inventory_classic.py` | The plain tkinter window, used automatically when no web engine is available. |
-| `tests.py` | Tests for the core and the `Api` bridge. |
+| `tests.py` | Tests for the core (including import and use-by dates) and the `Api` bridge. |
 | `dev/smoke_gui.py` | Drives the real window under `xvfb` for a screenshot and a crash check. |
 | `BUILD EXE (double-click me).cmd` | Runs the tests, then builds `dist\ShelterInventory.exe` with PyInstaller. |
 | `.github/workflows/build.yml` | Builds Windows and Mac downloads on GitHub and attaches them to a Release when you push a tag like `v0.2.1`. |
@@ -155,6 +168,18 @@ v0.2:
    **and** a message box, and writes the traceback to `log.txt`.
 4. A corrupt file falls back to `.bak`; if both are unreadable the app refuses
    to start rather than overwrite anything.
+
+### What changed in v0.5
+
+- **Import spreadsheet**: reads `.csv` (any delimiter, any common encoding)
+  and `.xlsx` (read with the standard library - no openpyxl). Column names are
+  guessed from the header row (`Item`, `Qty`, `Target`, `Best before`...),
+  the guess is shown before anything is imported, and problems are listed
+  row by row rather than silently fixed.
+- **Use-by dates**: optional per item, stored as `YYYY-MM-DD`, accepted in
+  the formats people actually write. `expiry_status()` gives `expired`,
+  `soon` or `''`; the window's warning horizon is `settings.expiry_warn_days`.
+- Old data files without the `expires` field load unchanged.
 
 ### Releasing a new version
 
