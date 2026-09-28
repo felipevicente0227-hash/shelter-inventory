@@ -223,6 +223,34 @@ class ExpiryTests(TempFolderTest):
         self.assertIn("2027-01-01", text)
 
 
+class CountSheetAndHelpTests(TempFolderTest):
+    def test_count_sheet_groups_by_category_then_name_with_a_box_per_item(self):
+        s = self.store()
+        s.settings["charity_name"] = "Hope House"
+        s.add_item("Tinned soup", "Food", 12, 50)
+        s.add_item("Blankets", "Bedding", 30, 35, "2027-01-01")
+        s.add_item("Rice", "Food", 5, 40)
+        rows = core.count_sheet_rows(s)
+        self.assertEqual([r["name"] for r in rows], ["Blankets", "Rice", "Tinned soup"])
+        text = core.count_sheet_text(s, dt.date(2026, 10, 1))
+        self.assertIn("Hope House - Stock count - 01 October 2026", text)
+        self.assertIn("Counted by:", text)
+        self.assertLess(text.index("BEDDING"), text.index("FOOD"))
+        self.assertEqual(text.count("[______]"), 3)
+        self.assertIn("use by 2027-01-01", text)
+        self.assertIn(core.APP_URL, text)
+
+    def test_count_sheet_when_empty(self):
+        self.assertIn("No items yet", core.count_sheet_text(self.store()))
+
+    def test_support_mail_link_carries_the_version(self):
+        link = core.support_mail_link(detail="it broke")
+        self.assertTrue(link.startswith("mailto:" + core.SUPPORT_EMAIL + "?"))
+        self.assertIn(core.APP_VERSION.replace(".", "."), link)
+        self.assertIn("it%20broke", link)
+        self.assertNotIn(" ", link)
+
+
 class ImportTests(TempFolderTest):
     def test_guess_columns_from_friendly_headers(self):
         m = core.guess_columns(["Item", "Type", "Qty", "Target", "Best before"])
@@ -673,6 +701,30 @@ class ApiTests(TempFolderTest):
         self.assertFalse(res["ok"])
         res = api.save_settings({"expiry_warn_days": 14})
         self.assertEqual(res["settings"]["expiry_warn_days"], 14)
+
+    def test_count_sheet_help_and_links_through_the_api(self):
+        api = self.api()
+        api.add_item("Socks", "Clothing", 1, 2)
+        sheet = api.count_sheet()
+        self.assertTrue(sheet["ok"])
+        self.assertEqual(sheet["rows"][0]["name"], "Socks")
+        self.assertIn("[______]", sheet["text"])
+        self.assertEqual(api.save_count_sheet(), {"ok": False}, "no window -> no dialog")
+        info = api.help_info()
+        self.assertEqual(info["version"], core.APP_VERSION)
+        self.assertEqual(info["support_email"], core.SUPPORT_EMAIL)
+        self.assertFalse(api.open_link("nonsense")["ok"])
+        opened = []
+        import webbrowser
+        real = webbrowser.open
+        webbrowser.open = lambda url: opened.append(url) or True
+        try:
+            self.assertTrue(api.open_link("report")["ok"])
+            self.assertTrue(api.open_link("site")["ok"])
+        finally:
+            webbrowser.open = real
+        self.assertTrue(opened[0].startswith("mailto:"))
+        self.assertEqual(opened[1], core.APP_URL)
 
     def test_needs_list_and_no_dialog_without_window(self):
         a = self.api()

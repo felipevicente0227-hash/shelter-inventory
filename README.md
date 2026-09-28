@@ -63,6 +63,12 @@ on Windows, or run `python3 shelter_inventory.py` on Mac/Linux.
   (below 80%), green is **Fine**. Change the two numbers under Settings.
 - **What we need**: a plain-text list of everything urgent or low, most-needed
   first. Copy it into an email, a Facebook post, or print it for a donation drive.
+- **Count sheet**: a printable list of every item with a blank box next to
+  it. Print it, walk the shelves with a clipboard, then type the counts in.
+  **Save as text file** if you have no printer handy.
+- **Help**: a one-page reminder of how everything works, where your data is,
+  and an **Email about a problem** button that opens a message to the author
+  with the version number already filled in.
 - **Settings**: charity name, your own categories (one per line), the two
   thresholds, how many days ahead to warn about use-by dates, and buttons to
   import a spreadsheet or load the example items. **Data folder** opens the
@@ -130,7 +136,7 @@ Python 3 plus one package, `pywebview` (the window). The data layer is standard 
 
 ```
 pip install pywebview
-python tests.py            # 59 tests, no window, nothing outside a temp folder
+python tests.py            # 63 tests, no window, nothing outside a temp folder
 python shelter_inventory.py
 ```
 
@@ -168,6 +174,16 @@ v0.2:
    **and** a message box, and writes the traceback to `log.txt`.
 4. A corrupt file falls back to `.bak`; if both are unreadable the app refuses
    to start rather than overwrite anything.
+
+### What changed in v0.6
+
+- **Count sheet** page: items grouped by category with a write-in box each;
+  `@media print` hides the rest of the app so **Print** gives a clean sheet
+  (or "Save as PDF" from the print dialog). `count_sheet_text()` is the
+  plain-text version used by "Save as text file".
+- **Help** panel with `support_mail_link()`: a `mailto:` pre-filled with the
+  version and the last error, opened in the person's own mail program via
+  `webbrowser`. The app itself still never touches the network.
 
 ### What changed in v0.5
 

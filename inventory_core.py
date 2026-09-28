@@ -47,12 +47,14 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "Shelter Inventory Manager"
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.6.0"
 APP_FOLDER_NAME = "ShelterInventory"
 
 # Where people can download the app. Shown at the bottom of the
 # "What we need" list so that one charity can pass the tool to another.
 APP_URL = "https://github.com/felipevicente0227-hash/shelter-inventory"
+# Where a charity can report a problem. Shown in Help; opens their own mail program.
+SUPPORT_EMAIL = "felipe.vicente0227@gmail.com"
 
 DATA_FILENAME = "inventory_data.json"
 SETTINGS_FILENAME = "settings.json"
@@ -1071,6 +1073,51 @@ def parse_import_table(table: list[list], mapping: dict | None = None) -> dict:
             "expires": expires,
         })
     return {"headers": headers, "mapping": mapping, "rows": rows, "problems": problems, "total": len(rows)}
+
+
+def count_sheet_rows(store: Store) -> list[dict]:
+    """Every item, grouped by category then A-Z: the order a person walks the shelves."""
+    rows = []
+    for item in sorted(store.items, key=lambda i: (i["category"].lower(), i["name"].lower())):
+        rows.append({
+            "category": item["category"],
+            "name": item["name"],
+            "current_qty": item["current_qty"],
+            "target_qty": item["target_qty"],
+            "expires": item.get("expires", ""),
+        })
+    return rows
+
+
+def count_sheet_text(store: Store, today: _dt.date | None = None) -> str:
+    """A stock-count sheet for a clipboard: every item with a blank box to
+    write today's count in. Plain text so it prints from anything."""
+    today = today or _dt.date.today()
+    name = store.settings.get("charity_name") or "Our shelter"
+    lines = [f"{name} - Stock count - {today:%d %B %Y}",
+             "Counted by: ______________________   Date: ____________", ""]
+    current = None
+    for r in count_sheet_rows(store):
+        if r["category"] != current:
+            current = r["category"]
+            lines += ["", current.upper(), "-" * len(current)]
+        note = f"  use by {r['expires']}" if r["expires"] else ""
+        lines.append(f"  [______]  {r['name']}   (last count {r['current_qty']}, target {r['target_qty']}){note}")
+    if not store.items:
+        lines.append("No items yet.")
+    lines += ["", "Type the new counts into the Inventory page when you are back at the computer.",
+              f"Made with {APP_NAME}: {APP_URL}"]
+    return "\n".join(lines) + "\n"
+
+
+def support_mail_link(subject_prefix: str = "Problem with", detail: str = "") -> str:
+    """A mailto: link with the version already filled in, so a bug report
+    arrives with the one fact that is always needed."""
+    from urllib.parse import quote
+    subject = f"{subject_prefix} {APP_NAME} {APP_VERSION}"
+    body = (f"Version: {APP_VERSION}\nComputer: {sys.platform}\n\n"
+            f"What I was doing:\n\n\nWhat happened instead:\n\n{detail}")
+    return f"mailto:{SUPPORT_EMAIL}?subject={quote(subject)}&body={quote(body)}"
 
 
 def write_text_file(path: Path, text: str) -> None:

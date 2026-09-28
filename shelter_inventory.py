@@ -180,6 +180,44 @@ class Api:
     def needs_list(self):
         return core.needs_list_text(self.store)
 
+    # ---- count sheet + help -----------------------------------------------
+    def count_sheet(self):
+        return {"ok": True, "rows": core.count_sheet_rows(self.store),
+                "text": core.count_sheet_text(self.store),
+                "charity_name": self.store.settings.get("charity_name") or "Our shelter",
+                "date": _dt.date.today().strftime("%d %B %Y")}
+
+    def save_count_sheet(self):
+        path = self._save_dialog(f"stock-count-{_dt.date.today():%Y-%m-%d}.txt", ("Text file (*.txt)",))
+        if not path:
+            return {"ok": False}
+        try:
+            core.write_text_file(Path(path), core.count_sheet_text(self.store))
+        except OSError as err:
+            return {"ok": False, "error": f"Save failed: {err}"}
+        return {"ok": True, "path": str(path)}
+
+    def help_info(self):
+        return {"ok": True, "version": core.APP_VERSION, "app_url": core.APP_URL,
+                "support_email": core.SUPPORT_EMAIL, "folder": str(self.store.folder),
+                "last_error": self.store.last_error}
+
+    def open_link(self, kind):
+        """Open the download page or a pre-filled bug-report email in the
+        person's own browser / mail program. The app itself stays offline."""
+        import webbrowser
+        if kind == "site":
+            target = core.APP_URL
+        elif kind == "report":
+            target = core.support_mail_link(detail=self.store.last_error or "")
+        else:
+            return {"ok": False, "error": "Unknown link."}
+        try:
+            webbrowser.open(target)
+            return {"ok": True}
+        except Exception as err:
+            return {"ok": False, "error": f"Could not open it: {err}"}
+
     def _save_dialog(self, filename, kinds):
         if self.window is None:
             return None
