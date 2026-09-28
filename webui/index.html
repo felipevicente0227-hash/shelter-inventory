@@ -70,7 +70,7 @@
   .btn:disabled { opacity: .5; cursor: default; }
 
   .grid { display: grid; gap: 16px; }
-  .g-top { grid-template-columns: 1.3fr .9fr 1.6fr; }
+  .g-top { grid-template-columns: 1.15fr .8fr 2fr; }
   .g-mid { grid-template-columns: 1.15fr 1fr; margin-top: 16px; }
   .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
   .card h3 { margin: 0; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
@@ -91,18 +91,18 @@
   .ring .num { position: absolute; inset: 0; display: grid; place-items: center; font-size: 26px; font-weight: 700; }
   .ring .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
 
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: stretch; }
-  .stat { background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 14px 12px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: stretch; }
+  .stat { background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 12px 12px; min-width: 0; }
   .stat h3 { font-size: 10px; }
-  .stat .v { font-size: 34px; font-weight: 700; line-height: 1.1; margin: 8px 0 4px; }
-  .stat .s { font-size: 11px; color: var(--muted); }
-  .stat.urgent .v { color: var(--red); } .stat.low .v { color: var(--amber); } .stat.ok .v { color: var(--green); }
+  .stat .v { font-size: 30px; font-weight: 700; line-height: 1.1; margin: 8px 0 4px; }
+  .stat .s { font-size: 11px; color: var(--muted); line-height: 1.3; }
+  .stat.urgent .v { color: var(--red); } .stat.low .v { color: var(--amber); } .stat.ok .v { color: var(--green); } .stat.expiry .v { color: var(--violet); }
 
   .list { display: flex; flex-direction: column; }
   .row { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border-top: 1px solid var(--line); }
   .row:first-child { border-top: 0; }
   .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .dot.urgent { background: var(--red); } .dot.low { background: var(--amber); } .dot.ok { background: var(--green); }
+  .dot.urgent { background: var(--red); } .dot.low { background: var(--amber); } .dot.ok { background: var(--green); } .dot.expired, .dot.soon { background: var(--violet); }
   .row .t { flex: 1; min-width: 0; }
   .row .t b { display: block; font-size: 13px; }
   .row .t span { font-size: 12px; color: var(--muted); }
@@ -126,6 +126,14 @@
   td .cat { color: var(--muted); font-size: 12px; }
   .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
   .pill.urgent { background: var(--red-soft); color: var(--red); } .pill.low { background: var(--amber-soft); color: var(--amber); } .pill.ok { background: var(--green-soft); color: var(--green); }
+  .pill.expired { background: var(--red-soft); color: var(--red); } .pill.soon { background: var(--violet-soft); color: var(--violet); }
+  td.exp { white-space: nowrap; font-size: 12px; color: var(--muted); }
+  .imp-map { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12px; margin: 6px 0 12px; }
+  .imp-map b { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 10px; align-self: center; }
+  .imp-map .none { color: var(--amber); }
+  .imp-table { width: 100%; font-size: 12px; margin-bottom: 10px; } .imp-table td, .imp-table th { padding: 5px 8px; }
+  .imp-problems { background: var(--amber-soft); border-radius: 10px; padding: 8px 12px; font-size: 12px; color: var(--amber); max-height: 120px; overflow: auto; margin-bottom: 10px; }
+  .modal.wide { width: 620px; }
   .qty { display: inline-flex; align-items: center; gap: 4px; }
   .qty input { width: 64px; text-align: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--card-2); }
   .qty input:focus { outline: 2px solid #CFE3D7; border-color: var(--green); background: #fff; }
@@ -198,7 +206,7 @@
     <section class="view on" id="view-dash">
       <div class="head">
         <div><h1 id="greeting">Good morning.</h1><p id="greetSub">Here's how your shelves look today.</p></div>
-        <div class="actions"><button class="btn" id="btnExport">Export CSV</button><button class="btn dark" id="btnAdd">+ New item</button></div>
+        <div class="actions"><button class="btn" id="btnImport">Import spreadsheet</button><button class="btn" id="btnExport">Export CSV</button><button class="btn dark" id="btnAdd">+ New item</button></div>
       </div>
       <div class="grid g-top">
         <div class="card hero">
@@ -214,8 +222,9 @@
           <div class="lbl">stocked</div>
         </div>
         <div class="card"><div class="stats">
-          <div class="stat urgent"><h3>Urgent</h3><div class="v" id="stUrgent">0</div><div class="s">below 50% of target</div></div>
-          <div class="stat low"><h3>Running low</h3><div class="v" id="stLow">0</div><div class="s">below 80% of target</div></div>
+          <div class="stat urgent"><h3>Urgent</h3><div class="v" id="stUrgent">0</div><div class="s" id="stUrgentSub">below 50% of target</div></div>
+          <div class="stat low"><h3>Running low</h3><div class="v" id="stLow">0</div><div class="s" id="stLowSub">below 80% of target</div></div>
+          <div class="stat expiry"><h3>Use-by</h3><div class="v" id="stExp">0</div><div class="s" id="stExpSub">expired or expiring soon</div></div>
           <div class="stat ok"><h3>Fine</h3><div class="v" id="stOk">0</div><div class="s" id="stTotal">of 0 items</div></div>
         </div></div>
       </div>
@@ -241,11 +250,11 @@
         <div class="toolbar">
           <input type="search" id="q" placeholder="Search items…">
           <select id="fCat"><option value="">All categories</option></select>
-          <select id="fShow"><option value="all">All items</option><option value="needs">Needs only</option><option value="urgent-only">Urgent only</option></select>
-          <select id="fSort"><option value="urgent">Most needed first</option><option value="name">Name A–Z</option><option value="qty">Lowest quantity</option></select>
+          <select id="fShow"><option value="all">All items</option><option value="needs">Needs only</option><option value="urgent-only">Urgent only</option><option value="expiring">Use-by soon or expired</option></select>
+          <select id="fSort"><option value="urgent">Most needed first</option><option value="name">Name A–Z</option><option value="qty">Lowest quantity</option><option value="expiry">Use-by date</option></select>
         </div>
         <table>
-          <thead><tr><th data-sort="name">Item</th><th>Category</th><th class="num">Have</th><th class="num">Need</th><th data-sort="urgent">Level</th><th>Update</th><th></th></tr></thead>
+          <thead><tr><th data-sort="name">Item</th><th>Category</th><th class="num">Have</th><th class="num">Need</th><th data-sort="urgent">Level</th><th data-sort="expiry">Use by</th><th>Update</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
         <div class="empty" id="invEmpty" hidden></div>
@@ -272,6 +281,7 @@
     <div class="field"><label>Have now</label><input id="iCurr" inputmode="numeric" placeholder="0"></div>
     <div class="field"><label>Need (target)</label><input id="iTgt" inputmode="numeric" placeholder="e.g. 50"></div>
   </div>
+  <div class="field"><label>Use by (optional)</label><input id="iExp" placeholder="e.g. 2027-03-31 or 31/03/2027 — leave blank if it doesn't expire"></div>
   <div class="err" id="iErr"></div>
   <div class="foot">
     <button class="btn danger" id="iDelete" hidden>Delete item</button><span></span>
@@ -287,10 +297,11 @@
     <div class="field"><label>Urgent below (% of target)</label><input id="sUrgent" inputmode="numeric"></div>
     <div class="field"><label>Low below (% of target)</label><input id="sLow" inputmode="numeric"></div>
   </div>
+  <div class="field"><label>Warn about use-by dates within (days)</label><input id="sWarn" inputmode="numeric"></div>
   <div class="hint" id="sFolder"></div>
   <div class="err" id="sErr"></div>
   <div class="foot">
-    <button class="btn" id="sSamples">Load example items</button>
+    <div class="right"><button class="btn" id="sImport">Import spreadsheet</button><button class="btn" id="sSamples">Load example items</button></div>
     <div class="right"><button class="btn" data-close>Cancel</button><button class="btn dark" id="sSave">Save</button></div>
   </div>
 </div></div>
@@ -299,7 +310,22 @@
   <h2>Welcome</h2>
   <p class="hint" style="margin:0 0 12px">Your inventory will be saved automatically, on this computer, in <span id="wFolder"></span>.</p>
   <div class="field"><label>What is your charity or shelter called?</label><input id="wName" placeholder="e.g. Hope House"></div>
-  <div class="foot"><span></span><div class="right"><button class="btn" id="wEmpty">Start empty</button><button class="btn dark" id="wSamples">Start with example items</button></div></div>
+  <div class="foot"><span></span><div class="right"><button class="btn" id="wEmpty">Start empty</button><button class="btn" id="wImport">Import my existing list</button><button class="btn dark" id="wSamples">Start with example items</button></div></div>
+  <p class="hint" style="margin:10px 0 0">Already keep a list in Excel or a CSV? <b>Import my existing list</b> reads it in — nothing to retype.</p>
+</div></div>
+
+<div class="modal-bg" id="mImport"><div class="modal wide">
+  <h2>Import spreadsheet</h2>
+  <p class="hint" id="impIntro" style="margin:0 0 10px"></p>
+  <div class="imp-map" id="impMap"></div>
+  <table class="imp-table"><thead><tr><th>Item</th><th>Category</th><th class="num">Have</th><th class="num">Need</th><th>Use by</th></tr></thead><tbody id="impRows"></tbody></table>
+  <div class="imp-problems" id="impProblems" hidden></div>
+  <div class="hint" id="impDupes"></div>
+  <div class="err" id="impErr"></div>
+  <div class="foot">
+    <button class="btn" id="impPick">Choose a different file</button>
+    <div class="right"><button class="btn" data-close>Cancel</button><button class="btn" id="impUpdate" hidden>Add &amp; update existing</button><button class="btn dark" id="impSkip">Import</button></div>
+  </div>
 </div></div>
 
 <div class="toast" id="toast"></div>
@@ -327,18 +353,22 @@ const demo = (() => {
     {id:7,name:"Washing powder",category:"Cleaning",current_qty:2,target_qty:15},
     {id:8,name:"Socks",category:"Clothing",current_qty:25,target_qty:80},
     {id:9,name:"Nappies (size 4)",category:"Hygiene",current_qty:4,target_qty:30},
+    {id:10,name:"UHT milk",category:"Food",current_qty:18,target_qty:30,expires:new Date(Date.now()+10*864e5).toISOString().slice(0,10)},
+    {id:11,name:"Baby formula",category:"Food",current_qty:6,target_qty:10,expires:"2025-12-01"},
   ];
   let next = 10, undo = [];
-  const settings = {charity_name:"Hope House", categories:["Food","Clothing","Bedding","Hygiene","Cleaning","Other"], urgent_below_percent:50, low_below_percent:80, setup_done:true};
+  const settings = {charity_name:"Hope House", categories:["Food","Clothing","Bedding","Hygiene","Cleaning","Other"], urgent_below_percent:50, low_below_percent:80, setup_done:true, expiry_warn_days:30};
   const snap = (l) => { undo.push([l, JSON.parse(JSON.stringify(items)), next]); };
   const st = () => ({ ok:true, items, settings, next_id:next, undo_label: undo.length ? undo[undo.length-1][0] : null,
     last_saved: new Date().toTimeString().slice(0,8), data_file:"C:\\Users\\you\\Documents\\ShelterInventory\\inventory_data.json",
-    folder:"C:\\Users\\you\\Documents\\ShelterInventory", last_error:null, demo:true });
+    folder:"C:\\Users\\you\\Documents\\ShelterInventory", last_error:null, demo:true, today:new Date().toISOString().slice(0,10) });
   return {
     get_state: async () => st(),
-    add_item: async (n,c,cu,t) => { if(!n.trim()) return {ok:false,error:"Please enter an item name."}; snap(`add '${n}'`); items.push({id:next++,name:n.trim(),category:c,current_qty:+cu||0,target_qty:+t||1}); return st(); },
+    add_item: async (n,c,cu,t,ex) => { if(!n.trim()) return {ok:false,error:"Please enter an item name."}; snap(`add '${n}'`); items.push({id:next++,name:n.trim(),category:c,current_qty:+cu||0,target_qty:+t||1,expires:ex||""}); return st(); },
     set_quantity: async (id,q) => { const it=items.find(i=>i.id==id); if(!it) return st(); if(isNaN(+q)||+q<0) return {ok:false,error:"Quantity must be 0 or more."}; snap(`change '${it.name}' quantity`); it.current_qty=+q; return st(); },
-    update_item: async (id,n,c,cu,t) => { const it=items.find(i=>i.id==id); snap(`edit '${it.name}'`); Object.assign(it,{name:n,category:c,current_qty:+cu,target_qty:+t}); return st(); },
+    update_item: async (id,n,c,cu,t,ex) => { const it=items.find(i=>i.id==id); snap(`edit '${it.name}'`); Object.assign(it,{name:n,category:c,current_qty:+cu,target_qty:+t,expires:ex||""}); return st(); },
+    pick_import_file: async () => ({ok:true, path:"(demo)", filename:"stock-list.xlsx", headers:["Item","Type","Qty","Target","Best before"], mapping:{name:"Item",category:"Type",current_qty:"Qty",target_qty:"Target",expires:"Best before"}, sample:[{name:"Pasta (500g)",category:"Food",current_qty:14,target_qty:40,expires:"2027-01-31"},{name:"Tinned soup",category:"Food",current_qty:20,target_qty:50,expires:""}], total:23, duplicates:1, problems:["Row 9: 'Tea bags' has a quantity that is not a number ('lots') - used 0."], more_problems:0}),
+    import_file: async (p, mode) => { snap("import"); items.push({id:next++,name:"Pasta (500g)",category:"Food",current_qty:14,target_qty:40,expires:"2027-01-31"}); const s=st(); s.import={added:22,updated:mode==="update"?1:0,skipped:mode==="update"?0:1}; return s; },
     delete_item: async (id) => { const it=items.find(i=>i.id==id); snap(`delete '${it.name}'`); items=items.filter(i=>i.id!=id); return st(); },
     undo: async () => { const u=undo.pop(); if(u){ items=u[1]; next=u[2]; } return st(); },
     save_settings: async (s) => { Object.assign(settings,s); return st(); },
@@ -365,6 +395,11 @@ const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;","
 function toast(msg, bad) { const t=$("#toast"); t.textContent=msg; t.className="toast on"+(bad?" bad":""); clearTimeout(t._h); t._h=setTimeout(()=>t.className="toast", 2600); }
 function ringSvg(p, size, color) { const r=(size/2)-4, c=2*Math.PI*r; return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" stroke="#ECEAE4" stroke-width="5" fill="none"/><circle cx="${size/2}" cy="${size/2}" r="${r}" stroke="${color}" stroke-width="5" fill="none" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-p/100)}"/></svg>`; }
 const colorOf = {urgent:"#B4372B", low:"#B8730F", ok:"#2E7D5B"};
+function today() { return state && state.today ? state.today : new Date().toISOString().slice(0,10); }
+function daysUntil(iso) { if (!iso) return null; const a = new Date(iso + "T00:00:00"), b = new Date(today() + "T00:00:00"); return Math.round((a - b) / 864e5); }
+function expiryOf(it) { const d = daysUntil(it.expires); if (d === null) return ""; return d < 0 ? "expired" : d <= (state.settings.expiry_warn_days ?? 30) ? "soon" : ""; }
+function expiryText(it) { const d = daysUntil(it.expires); if (d === null) return ""; if (d < 0) return `Expired ${-d === 1 ? "yesterday" : -d + " days ago"}`; if (d === 0) return "Use by today"; if (d === 1) return "Use by tomorrow"; return d <= 60 ? `${d} days left` : it.expires; }
+function fmtDate(iso) { if (!iso) return ""; const d = new Date(iso + "T00:00:00"); return d.toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric"}); }
 
 async function call(name, ...args) {
   let res;
@@ -377,8 +412,8 @@ async function call(name, ...args) {
 // ---- render -------------------------------------------------------------
 function render() {
   const s = state, items = s.items;
-  const counts = {urgent:0, low:0, ok:0};
-  items.forEach(i => counts[statusOf(i)]++);
+  const counts = {urgent:0, low:0, ok:0, expired:0, soon:0};
+  items.forEach(i => { counts[statusOf(i)]++; const e = expiryOf(i); if (e) counts[e]++; });
   const name = s.settings.charity_name || "Your shelter";
   $("#brandSub").textContent = name;
   document.title = name + " - Shelter Inventory";
@@ -401,12 +436,21 @@ function render() {
   $("#ringArc").setAttribute("stroke-dashoffset", (326.7 * (1 - stocked/100)).toFixed(1));
   $("#ringArc").setAttribute("stroke", stocked < 50 ? "#B4372B" : stocked < 80 ? "#B8730F" : "#2E7D5B");
   $("#stUrgent").textContent = counts.urgent; $("#stLow").textContent = counts.low; $("#stOk").textContent = counts.ok;
+  $("#stUrgentSub").textContent = `under ${s.settings.urgent_below_percent}% of target`;
+  $("#stLowSub").textContent = `under ${s.settings.low_below_percent}% of target`;
+  $("#stExp").textContent = counts.expired + counts.soon;
+  $("#stExpSub").textContent = counts.expired ? `${counts.expired} expired · ${counts.soon} soon` : `within ${s.settings.expiry_warn_days ?? 30} days`;
   $("#stTotal").textContent = `of ${items.length} item${items.length===1?"":"s"}`;
-  $("#greetSub").textContent = counts.urgent ? `${counts.urgent} item${counts.urgent===1?" needs":"s need"} attention today.` : items.length ? "Everything is in reasonable shape today." : "Add your first item to get started.";
+  const attentionCount = counts.urgent + counts.expired;
+  $("#greetSub").textContent = attentionCount ? `${attentionCount} item${attentionCount===1?" needs":"s need"} attention today.` : items.length ? "Everything is in reasonable shape today." : "Add your first item to get started.";
 
-  const need = items.filter(i => statusOf(i) !== "ok").sort((a,b) => pct(a)-pct(b)).slice(0, 6);
-  $("#attention").innerHTML = need.length ? need.map(i => { const st=statusOf(i); return `<div class="row"><span class="dot ${st}"></span><div class="t"><b>${esc(i.name)}</b><span>${esc(i.category)} · need ${i.target_qty-i.current_qty} more</span></div><div class="r">${i.current_qty} of ${i.target_qty}</div></div>`; }).join("")
-    : `<div class="empty">${items.length ? "Nothing is running low. Nice." : "No items yet — press <b>+ New item</b>."}</div>`;
+  const expiring = items.filter(i => expiryOf(i)).sort((a,b) => daysUntil(a.expires) - daysUntil(b.expires));
+  const need = items.filter(i => statusOf(i) !== "ok").sort((a,b) => pct(a)-pct(b));
+  const rowsHtml = [];
+  expiring.slice(0, 3).forEach(i => { const e = expiryOf(i); rowsHtml.push(`<div class="row"><span class="dot ${e}"></span><div class="t"><b>${esc(i.name)}</b><span>${esc(i.category)} · ${esc(expiryText(i))}</span></div><div class="r">${i.current_qty} in stock</div></div>`); });
+  need.slice(0, Math.max(3, 6 - rowsHtml.length)).forEach(i => { const st=statusOf(i); rowsHtml.push(`<div class="row"><span class="dot ${st}"></span><div class="t"><b>${esc(i.name)}</b><span>${esc(i.category)} · need ${i.target_qty-i.current_qty} more</span></div><div class="r">${i.current_qty} of ${i.target_qty}</div></div>`); });
+  $("#attention").innerHTML = rowsHtml.length ? rowsHtml.join("")
+    : `<div class="empty">${items.length ? "Nothing is running low or expiring. Nice." : "No items yet — press <b>+ New item</b>, or <b>Import spreadsheet</b>."}</div>`;
 
   const cats = {};
   items.forEach(i => { (cats[i.category] = cats[i.category] || []).push(i); });
@@ -433,18 +477,21 @@ function renderRows() {
   let list = state.items.filter(i => (!cat || i.category===cat) && (!q || i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)));
   if (show === "needs") list = list.filter(i => statusOf(i) !== "ok");
   if (show === "urgent-only") list = list.filter(i => statusOf(i) === "urgent");
+  if (show === "expiring") list = list.filter(i => expiryOf(i));
   if (sort === "name") list.sort((a,b)=>a.name.localeCompare(b.name));
   else if (sort === "qty") list.sort((a,b)=>a.current_qty-b.current_qty || a.name.localeCompare(b.name));
+  else if (sort === "expiry") list.sort((a,b)=>(a.expires||"9999")<(b.expires||"9999")?-1:(a.expires||"9999")>(b.expires||"9999")?1:a.name.localeCompare(b.name));
   else list.sort((a,b)=>order[statusOf(a)]-order[statusOf(b)] || pct(a)-pct(b) || a.name.localeCompare(b.name));
-  $("#rows").innerHTML = list.map(i => { const st=statusOf(i), p=pct(i); return `<tr class="${st}" data-id="${i.id}">
+  $("#rows").innerHTML = list.map(i => { const st=statusOf(i), p=pct(i), ex=expiryOf(i); return `<tr class="${st}" data-id="${i.id}">
     <td><b>${esc(i.name)}</b></td><td class="cat">${esc(i.category)}</td>
     <td class="num">${i.current_qty}</td><td class="num">${i.target_qty}</td>
     <td><span class="bar ${st}"><i style="width:${p}%"></i></span><span class="pill ${st}">${word[st]} · ${p}%</span></td>
+    <td class="exp">${i.expires ? (ex ? `<span class="pill ${ex}">${esc(expiryText(i))}</span>` : esc(fmtDate(i.expires))) : "—"}</td>
     <td><span class="qty"><input value="${i.current_qty}" data-qty="${i.id}" inputmode="numeric"><button class="btn sm" data-save="${i.id}">Save</button></span></td>
     <td class="act"><button class="btn sm" data-edit="${i.id}">Edit</button></td></tr>`; }).join("");
   const e = $("#invEmpty");
   e.hidden = list.length > 0;
-  e.innerHTML = state.items.length ? "No items match this search or filter." : "No items yet — press <b>+ New item</b>, or load example items under Settings.";
+  e.innerHTML = state.items.length ? "No items match this search or filter." : "No items yet — press <b>+ New item</b>, <b>Import spreadsheet</b>, or load example items under Settings.";
 }
 
 // ---- views ---------------------------------------------------------------
@@ -476,6 +523,7 @@ function openItem(item) {
   $("#iCat").value = item ? item.category : $("#iCat").options[0]?.value || "";
   $("#iCurr").value = item ? item.current_qty : "";
   $("#iTgt").value = item ? item.target_qty : "";
+  $("#iExp").value = item ? (item.expires || "") : "";
   $("#iErr").textContent = "";
   $("#iDelete").hidden = !item;
   openModal("#mItem");
@@ -485,8 +533,8 @@ $("#btnAdd2").addEventListener("click", () => openItem(null));
 $("#iSave").addEventListener("click", saveItem);
 $("#mItem").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveItem(); } });
 async function saveItem() {
-  const n=$("#iName").value, c=$("#iCat").value, cu=$("#iCurr").value, t=$("#iTgt").value;
-  const res = editingId == null ? await call("add_item", n, c, cu, t) : await call("update_item", editingId, n, c, cu, t);
+  const n=$("#iName").value, c=$("#iCat").value, cu=$("#iCurr").value, t=$("#iTgt").value, ex=$("#iExp").value.trim();
+  const res = editingId == null ? await call("add_item", n, c, cu, t, ex) : await call("update_item", editingId, n, c, cu, t, ex);
   if (res && res.ok === false) { $("#iErr").textContent = res.error; return; }
   closeModals(); toast(editingId == null ? "Item added" : "Saved");
 }
@@ -531,7 +579,7 @@ $("#navFolder").addEventListener("click", async () => { const r = await api().op
 $("#navSettings").addEventListener("click", () => {
   const s = state.settings;
   $("#sName").value = s.charity_name || ""; $("#sCats").value = s.categories.join("\n");
-  $("#sUrgent").value = s.urgent_below_percent; $("#sLow").value = s.low_below_percent;
+  $("#sUrgent").value = s.urgent_below_percent; $("#sLow").value = s.low_below_percent; $("#sWarn").value = s.expiry_warn_days ?? 30;
   $("#sFolder").textContent = "Your data folder: " + state.folder; $("#sErr").textContent = "";
   openModal("#mSettings");
 });
@@ -540,11 +588,50 @@ $("#sSave").addEventListener("click", async () => {
   const u = parseInt($("#sUrgent").value, 10), l = parseInt($("#sLow").value, 10);
   if (!cats.length) { $("#sErr").textContent = "Keep at least one category."; return; }
   if (!(u >= 1 && u < l && l <= 100)) { $("#sErr").textContent = "Urgent must be below Low, both between 1 and 100."; return; }
-  const res = await call("save_settings", {charity_name: $("#sName").value.trim(), categories: cats, urgent_below_percent: u, low_below_percent: l});
+  const w = parseInt($("#sWarn").value, 10);
+  if (!(w >= 0 && w <= 365)) { $("#sErr").textContent = "Use-by warning must be between 0 and 365 days."; return; }
+  const res = await call("save_settings", {charity_name: $("#sName").value.trim(), categories: cats, urgent_below_percent: u, low_below_percent: l, expiry_warn_days: w});
   if (res && res.ok === false) { $("#sErr").textContent = res.error; return; }
   closeModals(); toast("Settings saved");
 });
 $("#sSamples").addEventListener("click", async () => { const r = await call("load_samples"); if (r && r.ok !== false) { closeModals(); toast("Example items added"); } });
+$("#sImport").addEventListener("click", () => { closeModals(); startImport(); });
+$("#btnImport").addEventListener("click", startImport);
+
+// ---- import from a spreadsheet ----------------------------------------------
+let importPath = null;
+const fieldLabel = {name:"Item name", category:"Category", current_qty:"Have now", target_qty:"Need (target)", expires:"Use by"};
+async function startImport() {
+  let r;
+  try { r = await api().pick_import_file(); } catch (e) { toast("Could not open a file: " + e, true); return; }
+  if (!r || r.ok === false) { if (r && r.error) toast(r.error, true); return; }
+  showImportPreview(r);
+}
+function showImportPreview(r) {
+  importPath = r.path;
+  $("#impIntro").innerHTML = `<b>${esc(r.filename)}</b> — ${r.total} item${r.total===1?"":"s"} found. Check that the columns were understood, then press Import.`;
+  $("#impMap").innerHTML = ["name","current_qty","target_qty","category","expires"].map(f => `<b>${fieldLabel[f]}</b><span class="${r.mapping[f] ? "" : "none"}">${r.mapping[f] ? "← " + esc(r.mapping[f]) : (f==="name" ? "not found" : f==="current_qty" ? "not found — will use 0" : f==="target_qty" ? "not found — will use what you have" : "not found — skipped")}</span>`).join("");
+  $("#impRows").innerHTML = (r.sample || []).map(x => `<tr><td>${esc(x.name)}</td><td class="cat">${esc(x.category)}</td><td class="num">${x.current_qty}</td><td class="num">${x.target_qty}</td><td class="exp">${x.expires ? esc(fmtDate(x.expires)) : "—"}</td></tr>`).join("") + (r.total > (r.sample||[]).length ? `<tr><td colspan="5" class="hint">… and ${r.total - r.sample.length} more</td></tr>` : "");
+  const pr = $("#impProblems"); pr.hidden = !(r.problems && r.problems.length);
+  pr.innerHTML = (r.problems || []).map(esc).join("<br>") + (r.more_problems ? `<br>… and ${r.more_problems} more` : "");
+  $("#impDupes").textContent = r.duplicates ? `${r.duplicates} of these already exist in your inventory. "Import" leaves those alone; "Add & update existing" replaces their quantities with the spreadsheet's numbers.` : "";
+  $("#impUpdate").hidden = !r.duplicates;
+  $("#impSkip").disabled = !r.total;
+  $("#impErr").textContent = "";
+  openModal("#mImport");
+}
+async function doImport(mode) {
+  $("#impErr").textContent = "";
+  const res = await call("import_file", importPath, mode);
+  if (res && res.ok === false) { $("#impErr").textContent = res.error; return; }
+  closeModals();
+  const s = res.import || {};
+  toast(`Imported: ${s.added||0} added${s.updated ? `, ${s.updated} updated` : ""}${s.skipped ? `, ${s.skipped} already there` : ""} — Undo brings it back`);
+  showView("inv");
+}
+$("#impSkip").addEventListener("click", () => doImport("skip"));
+$("#impUpdate").addEventListener("click", () => doImport("update"));
+$("#impPick").addEventListener("click", startImport);
 
 // ---- first run ------------------------------------------------------------
 async function firstRun() {
@@ -558,6 +645,7 @@ async function firstRun() {
   };
   $("#wSamples").onclick = () => finish(true);
   $("#wEmpty").onclick = () => finish(false);
+  $("#wImport").onclick = async () => { await finish(false); startImport(); };
 }
 
 // ---- boot -------------------------------------------------------------------

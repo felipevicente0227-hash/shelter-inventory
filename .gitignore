@@ -3,7 +3,7 @@ __pycache__/
 build/
 dist/
 *.spec
-dev/shot-*.png
+dev/*.png
 # never commit a real charity's data
 data/
 inventory_data.json

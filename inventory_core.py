@@ -7,6 +7,8 @@ If you are reading the code for the first time, start here. This file holds:
   2. THE STORE          - loading, saving, backups, undo, and every change to an item
   3. THE ALGORITHMS     - status (urgent / low / ok), percent, sorting, filtering
   4. EXPORTS            - a CSV of everything, and the "What we need" list for donors
+  5. IMPORTS            - reading a charity's existing spreadsheet (CSV or Excel)
+  6. USE-BY DATES       - which items are expired or expiring soon
 
 Nothing in here opens a window, so all of it can be tested without a screen
 (see tests.py). The window lives in shelter_inventory.py and only calls
@@ -38,13 +40,14 @@ import datetime as _dt
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import traceback
 from pathlib import Path
 
 APP_NAME = "Shelter Inventory Manager"
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 APP_FOLDER_NAME = "ShelterInventory"
 
 # Where people can download the app. Shown at the bottom of the
@@ -71,11 +74,14 @@ DEFAULT_SETTINGS = {
     "setup_done": False,
     # Which skin the window uses: native, paper, clinic, bigprint or slate.
     "theme": "native",
+    # An item with a use-by date this many days away (or closer) is "expiring soon".
+    "expiry_warn_days": 30,
 }
 
 SAMPLE_ITEMS = [
-    {"name": "Tinned soup",     "category": "Food",     "current_qty": 12, "target_qty": 50},
-    {"name": "Rice (1kg bags)", "category": "Food",     "current_qty": 5,  "target_qty": 40},
+    {"name": "Tinned soup",     "category": "Food",     "current_qty": 12, "target_qty": 50, "expires": ""},
+    {"name": "Rice (1kg bags)", "category": "Food",     "current_qty": 5,  "target_qty": 40, "expires": ""},
+    {"name": "UHT milk",        "category": "Food",     "current_qty": 18, "target_qty": 30, "expires": "SOON"},
     {"name": "Blankets",        "category": "Bedding",  "current_qty": 30, "target_qty": 35},
     {"name": "Toothbrushes",    "category": "Hygiene",  "current_qty": 8,  "target_qty": 60},
     {"name": "Winter coats",    "category": "Clothing", "current_qty": 3,  "target_qty": 20},
@@ -268,6 +274,73 @@ def validate_target(tgt_str):
     return True, ""
 
 
+# --- use-by dates -----------------------------------------------------------
+
+_DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d",
+                 "%d %b %Y", "%d %B %Y", "%b %Y", "%B %Y", "%m/%Y", "%Y-%m")
+
+
+def parse_date(text) -> _dt.date | None:
+    """Turn what a person typed into a date, or None if it is not one.
+
+    Accepts the formats people actually write on tins and spreadsheets:
+    2026-03-31, 31/03/2026, 31.3.2026, 31 Mar 2026, Mar 2026 (= last day of
+    that month), and an Excel serial number such as 46112.
+    """
+    if text is None:
+        return None
+    if isinstance(text, _dt.datetime):
+        return text.date()
+    if isinstance(text, _dt.date):
+        return text
+    raw = str(text).strip()
+    if not raw:
+        return None
+    if re.fullmatch(r"\d{4,6}(\.0+)?", raw):           # Excel serial date
+        try:
+            return _dt.date(1899, 12, 30) + _dt.timedelta(days=int(float(raw)))
+        except (ValueError, OverflowError):
+            return None
+    for fmt in _DATE_FORMATS:
+        try:
+            parsed = _dt.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+        if "%d" not in fmt:                             # month only -> end of month
+            nxt = (parsed.replace(day=28) + _dt.timedelta(days=4)).replace(day=1)
+            parsed = nxt - _dt.timedelta(days=1)
+        return parsed
+    return None
+
+
+def validate_expiry(text):
+    """Empty is fine (most items have no use-by date). Otherwise it must be a date."""
+    if text is None or not str(text).strip():
+        return True, ""
+    if parse_date(text) is None:
+        return False, "Use-by date not understood. Try 2026-03-31 or 31/03/2026, or leave it blank."
+    return True, ""
+
+
+def normalize_expiry(text) -> str:
+    """The stored form is always YYYY-MM-DD or ''."""
+    d = parse_date(text)
+    return d.isoformat() if d else ""
+
+
+def expiry_status(expires: str, today: _dt.date | None = None, warn_days: int = 30) -> str:
+    """'expired', 'soon' or '' (no date, or comfortably in the future)."""
+    d = parse_date(expires)
+    if d is None:
+        return ""
+    today = today or _dt.date.today()
+    if d < today:
+        return "expired"
+    if (d - today).days <= warn_days:
+        return "soon"
+    return ""
+
+
 # ==========================================================================
 # 2. THE STORE
 # ==========================================================================
@@ -373,6 +446,7 @@ class Store:
         base["charity_name"] = str(base.get("charity_name") or "").strip()[:80]
         base["setup_done"] = bool(base.get("setup_done"))
         base["theme"] = str(base.get("theme") or "native").strip()[:20]
+        base["expiry_warn_days"] = self._clamp(base.get("expiry_warn_days"), 0, 365, 30)
         self.settings = base
 
     @staticmethod
@@ -412,6 +486,7 @@ class Store:
                     "category": str(entry.get("category") or "Other").strip()[:40] or "Other",
                     "current_qty": max(0, int(entry["current_qty"])),
                     "target_qty": max(1, int(entry["target_qty"])),
+                    "expires": normalize_expiry(entry.get("expires", "")),
                 }
             except (KeyError, TypeError, ValueError):
                 continue
@@ -526,8 +601,9 @@ class Store:
         lowered = name.strip().lower()
         return any(i["name"].lower() == lowered and i["id"] != except_id for i in self.items)
 
-    def add_item(self, name: str, category: str, current_qty, target_qty) -> dict:
-        for ok, msg in (validate_name(name), validate_quantity(current_qty), validate_target(target_qty)):
+    def add_item(self, name: str, category: str, current_qty, target_qty, expires="") -> dict:
+        for ok, msg in (validate_name(name), validate_quantity(current_qty),
+                        validate_target(target_qty), validate_expiry(expires)):
             if not ok:
                 raise ValueError(msg)
         if self.name_taken(name):
@@ -540,6 +616,7 @@ class Store:
             "category": category,
             "current_qty": int(current_qty),
             "target_qty": int(target_qty),
+            "expires": normalize_expiry(expires),
         }
         self.items.append(item)
         self.next_id += 1
@@ -560,8 +637,14 @@ class Store:
         self.save()
         return item
 
-    def update_item(self, item_id: int, name: str, category: str, current_qty, target_qty) -> dict:
+    def update_item(self, item_id: int, name: str, category: str, current_qty, target_qty, expires=None) -> dict:
+        """expires=None means "leave the use-by date as it is" (the classic window
+        does not know about dates); '' clears it; a date string sets it."""
         for ok, msg in (validate_name(name), validate_quantity(current_qty), validate_target(target_qty)):
+            if not ok:
+                raise ValueError(msg)
+        if expires is not None:
+            ok, msg = validate_expiry(expires)
             if not ok:
                 raise ValueError(msg)
         item = self.find(item_id)
@@ -574,6 +657,8 @@ class Store:
         item["category"] = (category or "Other").strip() or "Other"
         item["current_qty"] = int(current_qty)
         item["target_qty"] = int(target_qty)
+        if expires is not None:
+            item["expires"] = normalize_expiry(expires)
         self.save()
         return item
 
@@ -593,7 +678,10 @@ class Store:
         for sample in SAMPLE_ITEMS:
             if self.name_taken(sample["name"]):
                 continue
-            self.items.append({"id": self.next_id, **sample})
+            item = {"id": self.next_id, "expires": "", **sample}
+            if item.get("expires") == "SOON":       # a live example of a use-by warning
+                item["expires"] = (_dt.date.today() + _dt.timedelta(days=10)).isoformat()
+            self.items.append(item)
             self.next_id += 1
             added += 1
         self.save()
@@ -625,10 +713,58 @@ class Store:
         return get_status(item["current_qty"], item["target_qty"], u, l)
 
     def counts(self) -> dict:
-        out = {"total": len(self.items), "urgent": 0, "low": 0, "ok": 0}
+        out = {"total": len(self.items), "urgent": 0, "low": 0, "ok": 0, "expired": 0, "soon": 0}
         for item in self.items:
             out[self.status_of(item)] += 1
+            ex = self.expiry_of(item)
+            if ex:
+                out[ex] += 1
         return out
+
+    def expiry_of(self, item: dict, today: _dt.date | None = None) -> str:
+        return expiry_status(item.get("expires", ""), today, self.settings.get("expiry_warn_days", 30))
+
+    # ------------------------------------------------------------------ import
+
+    def import_rows(self, rows: list[dict], on_duplicate: str = "skip") -> dict:
+        """Add items read from a spreadsheet (see parse_import_table).
+
+        on_duplicate: 'skip'   - an item whose name already exists is left alone
+                      'update' - its quantities (and use-by date, if given) are
+                                 replaced by the spreadsheet's numbers
+        Returns {"added": n, "updated": n, "skipped": n}. One undo step.
+        """
+        if on_duplicate not in ("skip", "update"):
+            raise ValueError("on_duplicate must be 'skip' or 'update'")
+        self._snapshot("import from spreadsheet")
+        result = {"added": 0, "updated": 0, "skipped": 0}
+        for row in rows:
+            name = row["name"]
+            existing = next((i for i in self.items if i["name"].lower() == name.lower()), None)
+            if existing is not None:
+                if on_duplicate == "skip":
+                    result["skipped"] += 1
+                    continue
+                existing["current_qty"] = row["current_qty"]
+                existing["target_qty"] = row["target_qty"]
+                if row.get("category"):
+                    existing["category"] = row["category"]
+                if row.get("expires"):
+                    existing["expires"] = row["expires"]
+                result["updated"] += 1
+                continue
+            self.items.append({
+                "id": self.next_id,
+                "name": name,
+                "category": row.get("category") or "Other",
+                "current_qty": row["current_qty"],
+                "target_qty": row["target_qty"],
+                "expires": row.get("expires", ""),
+            })
+            self.next_id += 1
+            result["added"] += 1
+        self.save()
+        return result
 
     def categories_in_use(self) -> list[str]:
         """Settings categories first, then any category an item still uses."""
@@ -647,7 +783,7 @@ class Store:
 # 4. EXPORTS
 # ==========================================================================
 
-CSV_COLUMNS = ["name", "category", "current_qty", "target_qty", "percent", "status", "need"]
+CSV_COLUMNS = ["name", "category", "current_qty", "target_qty", "percent", "status", "need", "expires"]
 
 
 def inventory_rows(store: Store) -> list[dict]:
@@ -661,6 +797,7 @@ def inventory_rows(store: Store) -> list[dict]:
             "percent": get_pct(item["current_qty"], item["target_qty"]),
             "status": store.status_of(item),
             "need": max(0, item["target_qty"] - item["current_qty"]),
+            "expires": item.get("expires", ""),
         })
     return rows
 
@@ -706,6 +843,234 @@ def needs_list_text(store: Store, today: _dt.date | None = None) -> str:
 
     lines += ["", f"Made with {APP_NAME}, a free tool for shelters: {APP_URL}"]
     return "\n".join(lines) + "\n"
+
+
+# ==========================================================================
+# 5. IMPORTS - a charity's existing spreadsheet
+# ==========================================================================
+#
+# Most charities already have SOME list - an Excel sheet, a Google Sheet
+# exported as CSV, a table typed up by a volunteer. Retyping 80 items is the
+# moment people give up on a new tool, so we read theirs instead.
+#
+# We do not insist on our column names. We look at the header row and guess:
+#   name      <- item, name, product, description, goods
+#   category  <- category, type, group, section
+#   have      <- have, current, qty, quantity, stock, in stock, count
+#   need      <- need, target, want, required, par, min
+#   expires   <- expires, expiry, use by, best before, bbe, date
+# The guess is shown to the person before anything is imported.
+
+IMPORT_FIELDS = ["name", "category", "current_qty", "target_qty", "expires"]
+
+_HEADER_HINTS = {
+    "name": ["item name", "item", "name", "product", "description", "goods", "article", "articulo", "artículo", "nombre", "produit", "nom"],
+    "category": ["category", "type", "group", "section", "categoria", "categoría", "catégorie", "tipo"],
+    "current_qty": ["have now", "have", "current", "in stock", "stock", "on hand", "qty", "quantity", "count", "amount", "cantidad", "quantité", "existencias"],
+    "target_qty": ["need (target)", "target", "need", "needed", "want", "required", "par", "par level", "minimum", "min", "goal", "objetivo", "meta", "cible", "besoin"],
+    "expires": ["expires", "expiry", "expiry date", "use by", "use-by", "best before", "bbe", "bb date", "exp", "date", "caducidad", "caduca", "péremption", "dlc"],
+}
+
+
+def guess_columns(headers: list[str]) -> dict:
+    """Map our field names to header positions. Missing fields are absent."""
+    cleaned = [str(h or "").strip().lower() for h in headers]
+    mapping = {}
+    taken = set()
+    for field in IMPORT_FIELDS:                       # exact matches first
+        for hint in _HEADER_HINTS[field]:
+            if hint in cleaned and cleaned.index(hint) not in taken:
+                mapping[field] = cleaned.index(hint)
+                taken.add(mapping[field])
+                break
+    for field in IMPORT_FIELDS:                       # then "contains"
+        if field in mapping:
+            continue
+        for idx, head in enumerate(cleaned):
+            if idx in taken or not head:
+                continue
+            if any(hint in head for hint in _HEADER_HINTS[field]):
+                mapping[field] = idx
+                taken.add(idx)
+                break
+    return mapping
+
+
+def _looks_like_header(row: list) -> bool:
+    """A header row has words in it and no bare numbers."""
+    cells = [str(c or "").strip() for c in row]
+    if not any(cells):
+        return False
+    numeric = sum(1 for c in cells if re.fullmatch(r"-?\d+(\.\d+)?", c))
+    return numeric == 0 and len(guess_columns(cells)) >= 1
+
+
+def read_csv_table(text: str) -> list[list[str]]:
+    """Rows of a CSV whatever the delimiter (comma, semicolon, tab)."""
+    text = text.lstrip("\ufeff")
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    return [row for row in csv.reader(io.StringIO(text), dialect)]
+
+
+def read_xlsx_table(path: Path) -> list[list]:
+    """First sheet of an .xlsx as rows of values - standard library only.
+
+    An .xlsx is a zip of XML files. We read the shared-strings table and the
+    first worksheet; that covers every spreadsheet a charity is likely to
+    have. Formulas come back as their last calculated value.
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+          "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
+    with zipfile.ZipFile(path) as z:
+        shared = []
+        if "xl/sharedStrings.xml" in z.namelist():
+            root = ET.fromstring(z.read("xl/sharedStrings.xml"))
+            for si in root.findall("m:si", ns):
+                shared.append("".join(t.text or "" for t in si.iter(f"{{{ns['m']}}}t")))
+        # which file is the first sheet?
+        wb = ET.fromstring(z.read("xl/workbook.xml"))
+        rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+        rel_map = {r.get("Id"): r.get("Target") for r in rels}
+        first = wb.find("m:sheets/m:sheet", ns)
+        target = rel_map.get(first.get(f"{{{ns['r']}}}id"), "worksheets/sheet1.xml") if first is not None else "worksheets/sheet1.xml"
+        target = target.lstrip("/")
+        if not target.startswith("xl/"):
+            target = "xl/" + target
+        sheet = ET.fromstring(z.read(target))
+
+    def col_index(ref: str) -> int:
+        letters = "".join(ch for ch in ref if ch.isalpha())
+        n = 0
+        for ch in letters:
+            n = n * 26 + (ord(ch.upper()) - 64)
+        return n - 1
+
+    rows = []
+    for row in sheet.iter(f"{{{ns['m']}}}row"):
+        values = {}
+        for c in row.findall("m:c", ns):
+            idx = col_index(c.get("r", "A"))
+            kind = c.get("t")
+            v = c.find("m:v", ns)
+            if kind == "s" and v is not None:
+                val = shared[int(v.text)] if v.text and v.text.isdigit() and int(v.text) < len(shared) else ""
+            elif kind == "inlineStr":
+                val = "".join(t.text or "" for t in c.iter(f"{{{ns['m']}}}t"))
+            elif v is not None:
+                val = v.text or ""
+                if re.fullmatch(r"-?\d+\.0+", val):
+                    val = val.split(".")[0]
+            else:
+                val = ""
+            values[idx] = val
+        if values:
+            width = max(values) + 1
+            rows.append([values.get(i, "") for i in range(width)])
+    return rows
+
+
+def read_table_file(path: Path) -> list[list]:
+    path = Path(path)
+    if path.suffix.lower() in (".xlsx", ".xlsm"):
+        return read_xlsx_table(path)
+    if path.suffix.lower() == ".xls":
+        raise ValueError("Old .xls files are not supported. In Excel choose File > Save As "
+                         "and pick 'Excel Workbook (.xlsx)' or 'CSV', then try again.")
+    raw = path.read_bytes()
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return read_csv_table(raw.decode(enc))
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("Could not read that file as text.")
+
+
+def parse_import_table(table: list[list], mapping: dict | None = None) -> dict:
+    """Turn raw rows into clean items plus a list of problems.
+
+    Returns {"headers", "mapping", "rows", "problems", "total"} where rows are
+    ready for Store.import_rows and problems are sentences like
+    "Row 7: 'Beans' has no quantity - used 0". Nothing is guessed silently.
+    """
+    table = [list(r) for r in table if any(str(c or "").strip() for c in r)]
+    if not table:
+        return {"headers": [], "mapping": {}, "rows": [], "problems": ["The file is empty."], "total": 0}
+
+    if _looks_like_header(table[0]):
+        headers, body = [str(c or "").strip() for c in table[0]], table[1:]
+    else:
+        headers, body = [], table
+    mapping = dict(mapping) if mapping else guess_columns(headers)
+    if not headers and "name" not in mapping:
+        # No header row: assume name, have, need (the way people jot a list) -
+        # but only if the second column really does hold numbers.
+        def is_num(v):
+            return re.fullmatch(r"-?\d+(\.\d+)?", str(v or "").strip().replace(",", "")) is not None
+        if any(len(r) > 1 and is_num(r[1]) for r in body):
+            mapping = {"name": 0, "current_qty": 1, "target_qty": 2}
+        elif any(len(r) > 2 and is_num(r[2]) for r in body):
+            mapping = {"name": 0, "category": 1, "current_qty": 2, "target_qty": 3}
+
+    problems = []
+    if "name" not in mapping:
+        problems.append("Could not find an item-name column. The first row should have a heading like 'Item' or 'Name'.")
+        return {"headers": headers, "mapping": mapping, "rows": [], "problems": problems, "total": len(body)}
+
+    def cell(row, field):
+        idx = mapping.get(field)
+        if idx is None or idx >= len(row):
+            return ""
+        return str(row[idx] if row[idx] is not None else "").strip()
+
+    def to_int(text):
+        text = text.replace(",", "").strip()
+        if not text:
+            return None
+        try:
+            return int(float(text))
+        except ValueError:
+            return None
+
+    rows, seen = [], set()
+    for n, raw in enumerate(body, start=2 if headers else 1):
+        name = cell(raw, "name")[:80]
+        if not name:
+            continue
+        if name.lower() in seen:
+            problems.append(f"Row {n}: '{name}' appears twice in the file - the first one was kept.")
+            continue
+        seen.add(name.lower())
+        have = to_int(cell(raw, "current_qty"))
+        need = to_int(cell(raw, "target_qty"))
+        if have is None:
+            if "current_qty" in mapping and cell(raw, "current_qty"):
+                problems.append(f"Row {n}: '{name}' has a quantity that is not a number ('{cell(raw, 'current_qty')}') - used 0.")
+            have = 0
+        if have < 0:
+            have = 0
+        if need is None or need < 1:
+            if "target_qty" in mapping and cell(raw, "target_qty"):
+                problems.append(f"Row {n}: '{name}' has a target that is not a positive number - used what you have, or 1.")
+            need = max(1, have)
+        expires_raw = cell(raw, "expires")
+        expires = normalize_expiry(expires_raw) if expires_raw else ""
+        if expires_raw and not expires:
+            problems.append(f"Row {n}: '{name}' has a use-by date I could not read ('{expires_raw}') - left blank.")
+        rows.append({
+            "name": name,
+            "category": cell(raw, "category")[:40] or "Other",
+            "current_qty": have,
+            "target_qty": need,
+            "expires": expires,
+        })
+    return {"headers": headers, "mapping": mapping, "rows": rows, "problems": problems, "total": len(rows)}
 
 
 def write_text_file(path: Path, text: str) -> None:

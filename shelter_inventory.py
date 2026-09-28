@@ -58,6 +58,7 @@ class Api:
             "folder": str(s.folder),
             "recovered": s.recovered_from_backup,
             "version": core.APP_VERSION,
+            "today": _dt.date.today().isoformat(),
         }
 
     def _do(self, action, *args):
@@ -70,14 +71,14 @@ class Api:
         return self.get_state()
 
     # ---- changes ----------------------------------------------------------
-    def add_item(self, name, category, current_qty, target_qty):
-        return self._do(self.store.add_item, name, category, current_qty, target_qty)
+    def add_item(self, name, category, current_qty, target_qty, expires=""):
+        return self._do(self.store.add_item, name, category, current_qty, target_qty, expires)
 
     def set_quantity(self, item_id, qty):
         return self._do(self.store.set_quantity, int(item_id), qty)
 
-    def update_item(self, item_id, name, category, current_qty, target_qty):
-        return self._do(self.store.update_item, int(item_id), name, category, current_qty, target_qty)
+    def update_item(self, item_id, name, category, current_qty, target_qty, expires=""):
+        return self._do(self.store.update_item, int(item_id), name, category, current_qty, target_qty, expires)
 
     def delete_item(self, item_id):
         return self._do(self.store.delete_item, int(item_id))
@@ -105,9 +106,75 @@ class Api:
         if not (1 <= urgent < low <= 100):
             return {"ok": False, "error": "Urgent must be below Low, both between 1 and 100."}
         s["urgent_below_percent"], s["low_below_percent"] = urgent, low
+        if "expiry_warn_days" in changes:
+            try:
+                days = int(changes["expiry_warn_days"])
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "Use-by warning must be a whole number of days."}
+            if not (0 <= days <= 365):
+                return {"ok": False, "error": "Use-by warning must be between 0 and 365 days."}
+            s["expiry_warn_days"] = days
         if "setup_done" in changes:
             s["setup_done"] = bool(changes["setup_done"])
         return self._do(self.store.save_settings)
+
+    # ---- import from a spreadsheet ----------------------------------------
+    def _open_dialog(self, kinds):
+        if self.window is None:
+            return None
+        import webview
+        result = self.window.create_file_dialog(
+            webview.OPEN_DIALOG, directory=str(Path.home()), allow_multiple=False, file_types=kinds)
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else result
+
+    def pick_import_file(self):
+        """Let the person choose a CSV/Excel file and show what we understood
+        BEFORE importing anything. Nothing is changed by this call."""
+        path = self._open_dialog(("Spreadsheets (*.csv;*.xlsx;*.txt)", "All files (*.*)"))
+        if not path:
+            return {"ok": False}
+        return self.preview_import(path)
+
+    def preview_import(self, path):
+        try:
+            table = core.read_table_file(Path(path))
+            parsed = core.parse_import_table(table)
+        except (OSError, ValueError) as err:
+            return {"ok": False, "error": f"Could not read that file: {err}"}
+        except Exception as err:                       # a broken zip, odd XML...
+            return {"ok": False, "error": f"That file could not be understood ({type(err).__name__}: {err})."}
+        existing = {i["name"].lower() for i in self.store.items}
+        dupes = sum(1 for r in parsed["rows"] if r["name"].lower() in existing)
+        return {
+            "ok": True,
+            "path": str(path),
+            "filename": Path(path).name,
+            "headers": parsed["headers"],
+            "mapping": {k: (parsed["headers"][v] if v < len(parsed["headers"]) else f"column {v + 1}")
+                        for k, v in parsed["mapping"].items()},
+            "sample": parsed["rows"][:6],
+            "total": parsed["total"],
+            "duplicates": dupes,
+            "problems": parsed["problems"][:12],
+            "more_problems": max(0, len(parsed["problems"]) - 12),
+        }
+
+    def import_file(self, path, on_duplicate="skip"):
+        try:
+            table = core.read_table_file(Path(path))
+            parsed = core.parse_import_table(table)
+            if not parsed["rows"]:
+                return {"ok": False, "error": parsed["problems"][0] if parsed["problems"] else "No items found in that file."}
+            summary = self.store.import_rows(parsed["rows"], on_duplicate)
+        except (OSError, ValueError) as err:
+            return {"ok": False, "error": str(err)}
+        except StoreError as err:
+            return {"ok": False, "error": str(err)}
+        state = self.get_state()
+        state["import"] = summary
+        return state
 
     # ---- exports ----------------------------------------------------------
     def needs_list(self):
