@@ -47,7 +47,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "Shelter Inventory Manager"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1"
 APP_FOLDER_NAME = "ShelterInventory"
 
 # Where people can download the app. Shown at the bottom of the
