@@ -380,7 +380,10 @@ const demo = (() => {
     copied: async () => ({ok:true}),
   };
 })();
-const api = () => (window.pywebview && window.pywebview.api) ? window.pywebview.api : demo;
+// The real API exists only once pywebview has finished wiring it up - on a
+// slow machine that can be several seconds after this page first runs.
+const apiReady = () => !!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_state === "function");
+const api = () => apiReady() ? window.pywebview.api : demo;
 
 // ---- helpers ------------------------------------------------------------
 function statusOf(it) {
@@ -649,13 +652,32 @@ async function firstRun() {
 }
 
 // ---- boot -------------------------------------------------------------------
+let booting = false;
 async function boot() {
-  const s = await api().get_state();
-  state = s; render();
-  if (!s.settings.setup_done && !s.demo) firstRun();
+  if (state || booting) return;
+  booting = true;
+  try {
+    const s = await api().get_state();
+    if (!s || !s.items) throw new Error(s && s.error ? s.error : "no data came back");
+    state = s; render();
+    if (!s.settings.setup_done && !s.demo) firstRun();
+  } catch (e) {
+    booting = false;
+    toast("Could not load your inventory: " + e, true);
+    setTimeout(startup, 1500);                       // keep trying, quietly
+  }
 }
-if (window.pywebview) boot(); else window.addEventListener("pywebviewready", boot);
-setTimeout(() => { if (!state) boot(); }, 400);   // plain-browser preview
+// Keep asking until Python is ready. In a plain browser (no pywebview at all)
+// give it half a second, then run the demo data for design work.
+function startup(tries = 0) {
+  if (state || booting) return;
+  if (apiReady()) return boot();
+  if (!window.pywebview && tries >= 3) return boot();     // browser preview -> demo
+  if (tries === 40) toast("Still starting up… (this can take a few seconds the first time)");
+  setTimeout(() => startup(tries + 1), 150);
+}
+window.addEventListener("pywebviewready", () => startup());
+startup();
 </script>
 </body>
 </html>
