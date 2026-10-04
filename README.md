@@ -5,9 +5,17 @@ track of donated goods on paper or in their heads. It shows what you have, what
 you are running out of, and gives you a ready-to-share **"What we need"** list
 for donors. Everything stays on your own computer.
 
+**[Download for Windows or Mac](https://github.com/felipevicente0227-hash/shelter-inventory/releases/latest)** - free, no account, no internet.
+
 ![dashboard](docs/screenshot-main.png)
 
-![inventory](docs/screenshot-inventory.png)
+Import the list you already keep:
+
+![import](docs/screenshot-import.png)
+
+Print a count sheet for stock-taking:
+
+![count sheet](docs/screenshot-count-sheet.png)
 
 ---
 
@@ -37,6 +45,8 @@ Download this repository, then double-click `RUN APP (double-click me).cmd`
 on Windows, or run `python3 shelter_inventory.py` on Mac/Linux.
 
 ### Using it
+
+![inventory](docs/screenshot-inventory.png)
 
 - **Dashboard**: how stocked you are overall, what needs attention, and each
   category at a glance.
@@ -126,7 +136,8 @@ drive. To move to a new computer, copy it into the new computer's Documents.
   computer for `inventory_data.json`, copy that file into the data folder
   (replacing the one there), and restart the app.
 
-Questions or ideas: open an issue on this repository.
+Questions or ideas: open an issue on this repository, or use the
+**Email about a problem** button on the app's **Help** page.
 
 ---
 
@@ -151,6 +162,8 @@ Open `webui/index.html` in any browser to work on the design with sample data
 | `shelter_inventory_classic.py` | The plain tkinter window, used automatically when no web engine is available. |
 | `tests.py` | Tests for the core (including import and use-by dates) and the `Api` bridge. |
 | `dev/smoke_gui.py` | Drives the real window under `xvfb` for a screenshot and a crash check. |
+| `docs/examples/` | Sample spreadsheets for trying Import. |
+| `CHANGELOG.md` | What changed in each version, in plain English. It becomes the release notes. |
 | `BUILD EXE (double-click me).cmd` | Runs the tests, then builds `dist\ShelterInventory.exe` with PyInstaller. |
 | `.github/workflows/build.yml` | Builds Windows and Mac downloads on GitHub and attaches them to a Release when you push a tag like `v0.2.1`. |
 
@@ -175,33 +188,14 @@ v0.2:
 4. A corrupt file falls back to `.bak`; if both are unreadable the app refuses
    to start rather than overwrite anything.
 
-### What changed in v0.6
-
-- **Count sheet** page: items grouped by category with a write-in box each;
-  `@media print` hides the rest of the app so **Print** gives a clean sheet
-  (or "Save as PDF" from the print dialog). `count_sheet_text()` is the
-  plain-text version used by "Save as text file".
-- **Help** panel with `support_mail_link()`: a `mailto:` pre-filled with the
-  version and the last error, opened in the person's own mail program via
-  `webbrowser`. The app itself still never touches the network.
-
-### What changed in v0.5
-
-- **Import spreadsheet**: reads `.csv` (any delimiter, any common encoding)
-  and `.xlsx` (read with the standard library - no openpyxl). Column names are
-  guessed from the header row (`Item`, `Qty`, `Target`, `Best before`...),
-  the guess is shown before anything is imported, and problems are listed
-  row by row rather than silently fixed.
-- **Use-by dates**: optional per item, stored as `YYYY-MM-DD`, accepted in
-  the formats people actually write. `expiry_status()` gives `expired`,
-  `soon` or `''`; the window's warning horizon is `settings.expiry_warn_days`.
-- Old data files without the `expires` field load unchanged.
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Releasing a new version
 
 1. Bump `APP_VERSION` in `inventory_core.py`.
-2. `git tag v0.2.1 && git push --tags`
-3. GitHub builds the `.exe` and the Mac zip and attaches them to the Release.
+2. Add a section to `CHANGELOG.md` first - it becomes the release notes.
+3. `git tag v0.6.2 && git push --tags`
+4. GitHub builds the `.exe` and the Mac zip and attaches them to the Release.
 
 ### Design rules
 

@@ -6,7 +6,7 @@
 #   * pushing a tag like v0.2.0    -> tests, then build BOTH downloads and
 #                                     attach them to a GitHub Release
 #
-# To ship a new version:  git tag v0.2.1 && git push --tags
+# To ship a new version:  git tag v0.6.2 && git push --tags
 name: build
 
 on:
@@ -23,8 +23,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: python tests.py
@@ -34,8 +34,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pyinstaller pywebview
@@ -45,7 +45,7 @@ jobs:
           --name ShelterInventory --icon icon.ico --add-data "icon.ico;."
           --add-data "webui;webui" --hidden-import shelter_inventory_classic
           shelter_inventory.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ShelterInventory-windows
           path: dist/ShelterInventory.exe
@@ -55,8 +55,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pyinstaller pywebview
@@ -67,7 +67,7 @@ jobs:
           --add-data "webui:webui" --hidden-import shelter_inventory_classic
           shelter_inventory.py
       - run: cd dist && zip -r ShelterInventory-mac.zip ShelterInventory.app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ShelterInventory-mac
           path: dist/ShelterInventory-mac.zip
@@ -77,21 +77,35 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      # Release notes = this tag's section of CHANGELOG.md (from its
+      # "## vX.Y.Z" heading up to the next "## "), then the how-to-install text.
+      - name: Write release notes
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '/^## / { found = ($2 == tag) } found' CHANGELOG.md > notes.md
+          if ! [ -s notes.md ]; then
+            echo "CHANGELOG.md has no '## $GITHUB_REF_NAME' section - add one before tagging." >&2
+            exit 1
+          fi
+          cat >> notes.md <<'EOF'
+
+          **Windows:** download `ShelterInventory.exe` and double-click it.
+          The first time, Windows may say "Windows protected your PC" —
+          click **More info** → **Run anyway**. (The app is not code-signed,
+          because signing certificates cost money and this tool is free.)
+
+          **Mac:** download the zip, unzip, right-click `ShelterInventory` → **Open**.
+
+          Your data is saved in `Documents/ShelterInventory/` on your computer.
+          Nothing is uploaded anywhere.
+          EOF
+      - uses: actions/download-artifact@v8
         with:
           path: downloads
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             downloads/ShelterInventory-windows/ShelterInventory.exe
             downloads/ShelterInventory-mac/ShelterInventory-mac.zip
-          body: |
-            **Windows:** download `ShelterInventory.exe` and double-click it.
-            The first time, Windows may say "Windows protected your PC" —
-            click **More info** → **Run anyway**. (The app is not code-signed,
-            because signing certificates cost money and this tool is free.)
-
-            **Mac:** download the zip, unzip, right-click `ShelterInventory` → **Open**.
-
-            Your data is saved in `Documents/ShelterInventory/` on your computer.
-            Nothing is uploaded anywhere.
+          body_path: notes.md
+          fail_on_unmatched_files: true
