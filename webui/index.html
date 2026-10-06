@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shelter Inventory</title>
+<link rel="icon" href="favicon.ico">
 <style>
   /* ------------------------------------------------------------------
      Shelter Inventory Manager - the window.
@@ -187,7 +188,42 @@
   .toast.on { opacity: 1; }
   .toast.bad { background: var(--red); }
   .view { display: none; } .view.on { display: block; }
+  [hidden] { display: none !important; }
   @media (max-width: 1100px) { .g-top { grid-template-columns: 1fr 1fr; } .g-mid { grid-template-columns: 1fr; } }
+
+  /* ---------------- browser version: loading screen, backup banner ---------------- */
+  .boot { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 50; padding: 24px; text-align: center; }
+  .boot .box { max-width: 420px; }
+  .boot .mark { width: 44px; height: 44px; border-radius: 12px; background: var(--ink); color: #fff; display: grid; place-items: center; font-weight: 700; margin: 0 auto 16px; }
+  .boot h2 { margin: 0 0 6px; font-size: 18px; }
+  .boot p { margin: 0 0 8px; color: var(--ink-2); line-height: 1.5; }
+  .boot .spin { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--green); border-radius: 50%; margin: 18px auto 0; animation: spin 1s linear infinite; }
+  .boot a.btn { display: inline-block; text-decoration: none; margin-top: 10px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--amber-soft); color: #6B4508; border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 18px; font-size: 13px; }
+  .banner span { flex: 1; min-width: 200px; }
+  .backup-box { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
+  .backup-box .right { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+  /* ---------------- phones and small tablets (browser version) ---------------- */
+  @media (max-width: 760px) {
+    .app { display: block; height: auto; }
+    .side { position: sticky; top: 0; z-index: 10; flex-direction: row; align-items: center; overflow-x: auto; padding: 8px 10px; gap: 4px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .brand, .side .group, .side .spacer, .saved { display: none; }
+    .nav { width: auto; white-space: nowrap; padding: 8px 10px; flex: none; }
+    .main { padding: 18px 14px 32px; overflow: visible; }
+    .head { flex-direction: column; }
+    .actions { flex-wrap: wrap; }
+    .g-top, .g-mid { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .card { padding: 16px 14px; }
+    .card.table-card { overflow-x: auto; }
+    .toolbar input[type=search] { width: 100%; }
+    .modal { padding: 18px 16px; max-height: calc(100vh - 24px); overflow: auto; }
+    .modal .foot { flex-wrap: wrap; }
+    .two { grid-template-columns: 1fr; gap: 0; }
+    .sheet { padding: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -232,6 +268,10 @@
   </aside>
 
   <main class="main">
+    <div class="banner" id="backupBanner" hidden>
+      <span>Your list is saved in this browser only. Download a backup so you don't lose it.</span>
+      <button class="btn sm dark" id="bannerBackup">Download a backup</button><button class="btn sm" id="bannerLater">Not now</button>
+    </div>
     <!-- ============ DASHBOARD ============ -->
     <section class="view on" id="view-dash">
       <div class="head">
@@ -276,7 +316,7 @@
         <div><h1>Inventory</h1><p id="invSub">Everything you have, against what you need.</p></div>
         <div class="actions"><button class="btn" id="btnUndo" disabled>Undo</button><button class="btn dark" id="btnAdd2">+ New item</button></div>
       </div>
-      <div class="card">
+      <div class="card table-card">
         <div class="toolbar">
           <input type="search" id="q" placeholder="Search items…">
           <select id="fCat"><option value="">All categories</option></select>
@@ -338,6 +378,11 @@
   </div>
   <div class="field"><label>Warn about use-by dates within (days)</label><input id="sWarn" inputmode="numeric"></div>
   <div class="hint" id="sFolder"></div>
+  <div class="backup-box">
+    <div class="field" style="margin:0"><label>Backups</label>
+      <div class="hint">One file with your whole list and settings. Keep it somewhere safe. It can be restored here, in the browser version, or in the desktop app - which is also how you move your list between them.</div></div>
+    <div class="right"><button class="btn" id="sBackup">Download a backup</button><button class="btn" id="sRestore">Restore from a backup</button></div>
+  </div>
   <div class="err" id="sErr"></div>
   <div class="foot">
     <div class="right"><button class="btn" id="sImport">Import spreadsheet</button><button class="btn" id="sSamples">Load example items</button></div>
@@ -347,10 +392,11 @@
 
 <div class="modal-bg" id="mWelcome"><div class="modal">
   <h2>Welcome</h2>
-  <p class="hint" style="margin:0 0 12px">Your inventory will be saved automatically, on this computer, in <span id="wFolder"></span>.</p>
+  <p class="hint" id="wWhere" style="margin:0 0 12px">Your inventory will be saved automatically, on this computer, in <span id="wFolder"></span>.</p>
   <div class="field"><label>What is your charity or shelter called?</label><input id="wName" placeholder="e.g. Hope House"></div>
   <div class="foot"><span></span><div class="right"><button class="btn" id="wEmpty">Start empty</button><button class="btn" id="wImport">Import my existing list</button><button class="btn dark" id="wSamples">Start with example items</button></div></div>
   <p class="hint" style="margin:10px 0 0">Already keep a list in Excel or a CSV? <b>Import my existing list</b> reads it in — nothing to retype.</p>
+  <p class="hint" style="margin:6px 0 0">Moving from the desktop app or another device? <a href="#" id="wRestore">Restore a backup</a>.</p>
 </div></div>
 
 <div class="modal-bg" id="mImport"><div class="modal wide">
@@ -367,6 +413,14 @@
   </div>
 </div></div>
 
+<div class="modal-bg" id="mRestore"><div class="modal">
+  <h2>Restore from a backup</h2>
+  <p class="hint" id="rstText" style="margin:0 0 10px;line-height:1.5"></p>
+  <p class="hint" id="rstKeep" style="margin:0 0 10px;line-height:1.5"></p>
+  <div class="err" id="rstErr"></div>
+  <div class="foot"><span></span><div class="right"><button class="btn" data-close>Cancel</button><button class="btn dark" id="rstGo">Replace my list</button></div></div>
+</div></div>
+
 <div class="modal-bg" id="mHelp"><div class="modal wide help">
   <h2>Help</h2>
   <p class="hint" id="helpVersion"></p>
@@ -380,7 +434,7 @@
   </ul>
   <h3>Where your data lives</h3>
   <p id="helpFolder"></p>
-  <p>It is a normal folder you can back up by copying it. Nothing is uploaded anywhere, there is no account, and the program never uses the internet.</p>
+  <p id="helpFolder2">It is a normal folder you can back up by copying it. Nothing is uploaded anywhere, there is no account, and the program never uses the internet.</p>
   <h3>If something goes wrong</h3>
   <p>Press the button below. It opens a new email to the person who made this program, with the version number already filled in. Say what you were doing and what happened, and it gets fixed.</p>
   <div class="err" id="helpErr"></div>
@@ -391,12 +445,26 @@
 </div></div>
 
 <div class="toast" id="toast"></div>
+<input type="file" id="fileImport" accept=".csv,.xlsx" hidden>
+<input type="file" id="fileRestore" accept=".json,application/json" hidden>
+
+<!-- Browser version only: shown while Python (Pyodide) loads. -->
+<div class="boot" id="boot" hidden><div class="box">
+  <div class="mark">SI</div>
+  <h2 id="bootTitle">Shelter Inventory</h2>
+  <p id="bootText">Getting things ready - first time takes a few seconds.</p>
+  <div class="spin" id="bootSpin"></div>
+  <div id="bootMore"></div>
+</div></div>
 
 <script>
 // ---------------------------------------------------------------------
-// The page talks to Python through window.pywebview.api (see
-// shelter_inventory.py). When opened in a plain browser there is no
-// Python, so a small in-memory demo store stands in - handy for design work.
+// The page talks to Python, one of three ways:
+//   1. the desktop app: window.pywebview.api (shelter_inventory.py)
+//   2. the browser version (a web address): Python runs inside the page via
+//      Pyodide, with inventory_core.py and browser_api.py - same methods
+//   3. a small in-memory demo store, for design work: when the page is
+//      opened as a local file, or the address ends in ?demo
 // ---------------------------------------------------------------------
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -444,12 +512,21 @@ const demo = (() => {
     help_info: async () => ({ok:true, version:"demo", app_url:"https://github.com/felipevicente0227-hash/shelter-inventory", support_email:"felipe.vicente0227@gmail.com", folder:"C:\\Users\\you\\Documents\\ShelterInventory", last_error:null}),
     open_link: async () => ({ok:true}),
     copied: async () => ({ok:true}),
+    save_backup: async () => ({ok:true, path:"(demo)"}),
+    pick_restore_file: async () => ({ok:true, path:"(demo)", filename:"shelter-inventory-backup-2026-10-01.json", kind:"backup", items:12, charity_name:"Hope House", saved_at:"2026-10-01T09:30:00", current_items:items.length, current_charity_name:settings.charity_name}),
+    restore_file: async () => st(),
   };
 })();
 // The real API exists only once pywebview has finished wiring it up - on a
 // slow machine that can be several seconds after this page first runs.
 const apiReady = () => !!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_state === "function");
-const api = () => apiReady() ? window.pywebview.api : demo;
+// The desktop app marks the page (see shelter_inventory.main) so a slow start
+// there can never be mistaken for the browser version.
+const DESKTOP = document.documentElement.dataset.app === "desktop";
+const BROWSER = !DESKTOP && /^https?:$/.test(location.protocol) && !new URLSearchParams(location.search).has("demo");
+let browserApi = null;
+const api = () => apiReady() ? window.pywebview.api : browserApi || demo;
+window.siBackend = () => apiReady() ? "desktop" : browserApi ? "browser" : "demo";   // for dev/smoke_browser.py
 
 // ---- helpers ------------------------------------------------------------
 function statusOf(it) {
@@ -478,6 +555,159 @@ async function call(name, ...args) {
   return res;
 }
 
+// ---- browser version: Python inside the page (Pyodide) ---------------------
+// Pinned: sw.js caches exactly these files for offline use - change both together.
+const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
+const DOWNLOAD_URL = "https://github.com/felipevicente0227-hash/shelter-inventory/releases/latest";
+// Calls that change nothing in /data. After any other call the browser's
+// storage is synced, so a closed tab never loses a change.
+const READ_ONLY = new Set(["get_state", "needs_list", "count_sheet", "help_info", "preview_import", "preview_restore",
+  "stage_file", "export_csv", "save_needs", "save_count_sheet", "save_backup", "open_link", "copied", "open_folder",
+  "pick_import_file", "pick_restore_file"]);
+let pyodide = null, syncing = Promise.resolve(), persisted = null;
+
+// /data lives in the browser's IndexedDB. populate=true reads it in, false writes it out.
+// One sync at a time - overlapping syncs are refused.
+function syncfs(populate) {
+  syncing = syncing.catch(() => {}).then(() => new Promise((ok, bad) =>
+    pyodide.FS.syncfs(populate, (err) => err ? bad(err) : ok())));
+  return syncing;
+}
+function fromPy(v) {
+  if (v && typeof v.toJs === "function") {
+    const out = v.toJs({dict_converter: Object.fromEntries, create_pyproxies: false});
+    v.destroy();
+    return out;
+  }
+  return v;
+}
+// Looks like window.pywebview.api: api().add_item(...) etc.
+function makeBrowserApi(py) {
+  return new Proxy({}, { get: (_, name) => {
+    if (typeof name !== "string" || name === "then") return undefined;
+    return async (...args) => {
+      const conv = args.map(a => a && typeof a === "object" && !(a instanceof Uint8Array) ? pyodide.toPy(a) : a);
+      const fn = py[name];
+      let res;
+      try { res = fromPy(fn(...conv)); }
+      finally { fn.destroy(); conv.forEach((a, i) => { if (a !== args[i]) a.destroy(); }); }
+      if (!READ_ONLY.has(name)) {
+        try { await syncfs(false); }
+        catch (e) {
+          toast("Could not save in this browser's storage - download a backup now.", true);
+          if (res && res.items) res.last_error = "Not saved in this browser's storage (" + e + "). Download a backup now.";
+        }
+      }
+      return res;
+    };
+  }});
+}
+function loadScript(src) {
+  return new Promise((ok, bad) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = ok; s.onerror = () => bad(new Error("could not download " + src));
+    document.head.appendChild(s);
+  });
+}
+async function startBrowser() {
+  const screen = $("#boot");
+  screen.hidden = false;
+  if (location.protocol === "https:" && "serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});      // works offline after this first visit
+  }
+  const slow = setTimeout(() => { $("#bootMore").innerHTML = `<p class="hint">Still loading - on a slow connection the first time can take a minute.</p>`; }, 20000);
+  // One tab at a time: two open tabs would each keep their own copy of the
+  // list and whichever saved last would silently undo the other's changes.
+  if (navigator.locks && !(await holdTabLock())) {
+    clearTimeout(slow);
+    $("#bootSpin").hidden = true;
+    $("#bootTitle").textContent = "Already open in another tab";
+    $("#bootText").textContent = "Shelter Inventory is already open in another tab or window. Use that one - or close it, then press Try again.";
+    $("#bootMore").innerHTML = `<button class="btn dark" onclick="location.reload()">Try again</button>`;
+    return;
+  }
+  try {
+    if (!window.WebAssembly || !window.indexedDB) throw new Error("this browser is too old to run it");
+    await loadScript(PYODIDE_URL + "pyodide.js");
+    pyodide = await loadPyodide({indexURL: PYODIDE_URL});
+    const FS = pyodide.FS;
+    FS.mkdirTree("/data");
+    FS.mount(FS.filesystems.IDBFS, {}, "/data");
+    await syncfs(true);
+    FS.mkdirTree("/app");
+    for (const f of ["inventory_core.py", "browser_api.py"]) {
+      const r = await fetch(f, {cache: "no-cache"});
+      if (!r.ok) throw new Error(`could not download ${f} (${r.status})`);
+      FS.writeFile("/app/" + f, await r.text());
+    }
+    pyodide.runPython("import sys; sys.path.insert(0, '/app')");
+    const mod = pyodide.pyimport("browser_api");
+    browserApi = makeBrowserApi(mod.BrowserApi("/data"));
+    mod.destroy();
+  } catch (e) {
+    clearTimeout(slow);
+    showBootFailure(e);
+    return;
+  }
+  clearTimeout(slow);
+  screen.hidden = true;
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((p) => { persisted = p; }).catch(() => {});
+  addEventListener("pagehide", () => { syncfs(false); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) syncfs(false); });
+  $("#navFolder").hidden = true;
+  boot();
+}
+// Resolves true once this tab owns the lock (kept until the tab closes), false if another tab has it.
+function holdTabLock() {
+  return new Promise((ok) => {
+    navigator.locks.request("shelter-inventory-data", {ifAvailable: true}, (lock) => {
+      ok(!!lock);
+      return lock ? new Promise(() => {}) : null;
+    }).catch(() => ok(true));
+  });
+}
+function showBootFailure(e) {
+  $("#bootSpin").hidden = true;
+  $("#bootTitle").textContent = "Shelter Inventory could not start here";
+  $("#bootText").textContent = navigator.onLine === false
+    ? "You seem to be offline. The first visit needs the internet once; after that it also works offline."
+    : "This browser could not run it - it may be too old. Try an up-to-date Chrome, Edge, Safari or Firefox, or download the app instead.";
+  $("#bootMore").innerHTML = `<a class="btn dark" href="${DOWNLOAD_URL}">Download the app for Windows or Mac</a>`
+    + `<p class="hint" style="margin-top:12px">(${esc(String((e && e.message) || e)).slice(0, 200)})</p>`;
+}
+
+// ---- files: the desktop saves them with a dialog, the browser downloads them ----
+function download(filename, content, mime) {
+  const url = URL.createObjectURL(new Blob([content], {type: (mime || "text/plain") + ";charset=utf-8"}));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+function fileSaved(r, said = "Saved: ") {
+  if (r && r.ok && r.content != null) { download(r.filename, r.content, r.mime); toast("Downloaded " + r.filename); return true; }
+  if (r && r.ok) { toast(said + r.path); return true; }
+  if (r && r.error) toast(r.error, true);
+  return false;
+}
+function openUrl(url) {
+  if (url.startsWith("mailto:")) { const a = document.createElement("a"); a.href = url; a.click(); }
+  else window.open(url, "_blank", "noopener");
+}
+// Browser only: a file the person picked is copied into Python's file system first.
+async function stageFile(file) {
+  let r;
+  try { r = await api().stage_file(file.name, new Uint8Array(await file.arrayBuffer())); }
+  catch (e) { toast("Could not read that file: " + e, true); return null; }
+  if (!r || !r.ok) { toast((r && r.error) || "Could not read that file", true); return null; }
+  return r;
+}
+// A remembered date in this browser (for the backup reminder). Fails quietly.
+const mem = {
+  get: (k) => { try { return +localStorage.getItem(k) || 0; } catch (e) { return 0; } },
+  now: (k) => { try { localStorage.setItem(k, String(Date.now())); } catch (e) {} },
+};
+
 // ---- render -------------------------------------------------------------
 function render() {
   const s = state, items = s.items;
@@ -492,6 +722,7 @@ function render() {
   if (s.last_error) { box.className = "saved err"; box.innerHTML = `<b>Not saved</b>${esc(s.last_error)}`; }
   else if (s.last_saved) { box.className = "saved"; box.innerHTML = `<b>Saved ${esc(s.last_saved)}</b>${esc(s.data_file)}`; }
   else { box.className = "saved"; box.innerHTML = `<b>Saves automatically</b>${esc(s.data_file)}`; }
+  if (s.browser) box.innerHTML += `<br><br><b>Last backup</b>${esc(lastBackupText())}`;
   $("#navUrgent").hidden = !counts.urgent; $("#navUrgent").textContent = counts.urgent;
 
   // dashboard
@@ -538,7 +769,22 @@ function render() {
   $("#btnUndo").disabled = !s.undo_label;
   $("#btnUndo").textContent = s.undo_label ? `Undo ${s.undo_label}` : "Undo";
   $("#invSub").textContent = `${items.length} item${items.length===1?"":"s"} · ${counts.urgent} urgent · ${counts.low} low · ${counts.ok} fine`;
+  updateBanner();
 }
+
+function lastBackupText() {
+  const t = mem.get("si.lastBackup");
+  return t ? new Date(t).toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"}) : "Never - use Settings → Download a backup";
+}
+// Browser version: browser data can be wiped, so nudge for a backup -
+// 5+ items and none downloaded for 14 days; "Not now" hides it for 7.
+function updateBanner() {
+  const day = 864e5, now = Date.now();
+  $("#backupBanner").hidden = !(state && state.browser && state.items.length >= 5
+    && now - mem.get("si.lastBackup") > 14 * day && now - mem.get("si.bannerLater") > 7 * day);
+}
+$("#bannerBackup").addEventListener("click", saveBackup);
+$("#bannerLater").addEventListener("click", () => { mem.now("si.bannerLater"); updateBanner(); });
 
 function renderRows() {
   const q = $("#q").value.trim().toLowerCase(), cat = $("#fCat").value, show = $("#fShow").value, sort = $("#fSort").value;
@@ -641,8 +887,8 @@ $("#btnNeedsCopy").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(text); toast("Copied — paste it anywhere"); }
   catch (e) { const r = await api().copied(text); toast(r && r.ok ? "Copied — paste it anywhere" : "Could not copy", !(r && r.ok)); }
 });
-$("#btnNeedsSave").addEventListener("click", async () => { const r = await api().save_needs(); if (r && r.ok) toast("Saved: " + r.path); else if (r && r.error) toast(r.error, true); });
-$("#btnExport").addEventListener("click", async () => { const r = await api().export_csv(); if (r && r.ok) toast("Exported: " + r.path); else if (r && r.error) toast(r.error, true); });
+$("#btnNeedsSave").addEventListener("click", async () => fileSaved(await api().save_needs()));
+$("#btnExport").addEventListener("click", async () => fileSaved(await api().export_csv(), "Exported: "));
 $("#navFolder").addEventListener("click", async () => { const r = await api().open_folder(); if (r && r.error) toast(r.error, true); });
 
 // ---- count sheet -------------------------------------------------------------
@@ -661,27 +907,54 @@ async function loadCountSheet() {
   html += `<div class="foot">Type the new counts into the Inventory page when you are back at the computer.</div>`;
   $("#sheet").innerHTML = html;
 }
-$("#btnCountPrint").addEventListener("click", () => window.print());
-$("#btnCountSave").addEventListener("click", async () => { const r = await api().save_count_sheet(); if (r && r.ok) toast("Saved: " + r.path); else if (r && r.error) toast(r.error, true); });
+// Browser version: the sheet opens in its own tab, ready to print (phones and
+// tablets print a tab far better than a page with a sidebar).
+const SHEET_CSS = `body{font-family:"Segoe UI",-apple-system,system-ui,Roboto,Arial,sans-serif;color:#1B1B1A;margin:24px}
+h2{margin:0 0 2px;font-size:20px}.meta,.hint{color:#8A8985;font-size:12px}.meta{margin-bottom:14px}
+.byline{display:flex;gap:24px;font-size:13px;margin-bottom:14px}.byline span{border-bottom:1px solid #1B1B1A;flex:1;padding-bottom:2px}
+h4{margin:14px 0 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8A8985}
+table{width:100%;border-collapse:collapse}td{padding:7px 6px;border-bottom:1px solid #ccc;font-size:13px}
+td.box{width:74px}td.box i{display:block;width:62px;height:26px;border:1.5px solid #000;border-radius:4px}
+td.last{color:#8A8985;font-size:12px;white-space:nowrap;text-align:right}.foot{color:#8A8985;font-size:11px;margin-top:14px}`;
+$("#btnCountPrint").addEventListener("click", () => {
+  const w = BROWSER ? window.open("", "_blank") : null;
+  if (!w) return window.print();
+  w.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
+    + `<title>${esc(document.title)} - count sheet</title><style>${SHEET_CSS}</style></head><body>${$("#sheet").innerHTML}`
+    + `<script>addEventListener("load", () => setTimeout(print, 300));<\/script></body></html>`);
+  w.document.close();
+});
+$("#btnCountSave").addEventListener("click", async () => fileSaved(await api().save_count_sheet()));
 
 // ---- help --------------------------------------------------------------------
 $("#navHelp").addEventListener("click", async () => {
   const h = await api().help_info();
   if (!h || h.ok === false) return;
   $("#helpVersion").textContent = `Shelter Inventory Manager, version ${h.version}. Free and open source.`;
-  $("#helpFolder").textContent = "Everything is saved in " + h.folder;
+  $("#helpFolder").textContent = h.browser
+    ? "This is the browser version. Your list is saved in this browser, on this device only. Clearing your browsing data deletes it - keep a backup."
+    : "Everything is saved in " + h.folder;
+  $("#helpFolder2").textContent = h.browser
+    ? "Nothing is uploaded anywhere: there is no server, no account and no tracking. Another device has its own, separate list. Settings → Download a backup gives you one file with everything, which also moves your list to another device or to the desktop app. Last backup: " + lastBackupText() + "."
+      + (persisted === false ? " This browser has not promised to keep the list, so it may clear it if the device runs low on space - backups matter even more." : "")
+    : HELP_FOLDER2;
   $("#helpErr").textContent = h.last_error ? "Last error: " + h.last_error : "";
   openModal("#mHelp");
 });
-$("#helpReport").addEventListener("click", async () => { const r = await api().open_link("report"); if (r && r.ok) toast("Your email program should open now"); else if (r && r.error) toast(r.error, true); });
-$("#helpSite").addEventListener("click", async () => { const r = await api().open_link("site"); if (r && r.error) toast(r.error, true); });
+const HELP_FOLDER2 = $("#helpFolder2").textContent;
+$("#helpReport").addEventListener("click", async () => { const r = await api().open_link("report"); if (r && r.url) openUrl(r.url); if (r && r.ok) toast("Your email program should open now"); else if (r && r.error) toast(r.error, true); });
+$("#helpSite").addEventListener("click", async () => { const r = await api().open_link("site"); if (r && r.url) openUrl(r.url); if (r && r.error) toast(r.error, true); });
 
 // ---- settings --------------------------------------------------------------
 $("#navSettings").addEventListener("click", () => {
   const s = state.settings;
   $("#sName").value = s.charity_name || ""; $("#sCats").value = s.categories.join("\n");
   $("#sUrgent").value = s.urgent_below_percent; $("#sLow").value = s.low_below_percent; $("#sWarn").value = s.expiry_warn_days ?? 30;
-  $("#sFolder").textContent = "Your data folder: " + state.folder; $("#sErr").textContent = "";
+  $("#sFolder").textContent = state.browser
+    ? "Your list is saved in " + state.folder + ". Clearing your browsing data deletes it - keep a backup. Last backup: " + lastBackupText() + "."
+    : "Your data folder: " + state.folder;
+  $("#sErr").textContent = "";
+  $("#sBackup").textContent = state.browser ? "Download a backup" : "Save a backup";
   openModal("#mSettings");
 });
 $("#sSave").addEventListener("click", async () => {
@@ -698,11 +971,14 @@ $("#sSave").addEventListener("click", async () => {
 $("#sSamples").addEventListener("click", async () => { const r = await call("load_samples"); if (r && r.ok !== false) { closeModals(); toast("Example items added"); } });
 $("#sImport").addEventListener("click", () => { closeModals(); startImport(); });
 $("#btnImport").addEventListener("click", startImport);
+$("#sBackup").addEventListener("click", saveBackup);
+$("#sRestore").addEventListener("click", startRestore);
 
 // ---- import from a spreadsheet ----------------------------------------------
 let importPath = null;
 const fieldLabel = {name:"Item name", category:"Category", current_qty:"Have now", target_qty:"Need (target)", expires:"Use by"};
 async function startImport() {
+  if (BROWSER) { const f = $("#fileImport"); f.value = ""; f.click(); return; }   // -> change, below
   let r;
   try { r = await api().pick_import_file(); } catch (e) { toast("Could not open a file: " + e, true); return; }
   if (!r || r.ok === false) { if (r && r.error) toast(r.error, true); return; }
@@ -733,10 +1009,63 @@ async function doImport(mode) {
 $("#impSkip").addEventListener("click", () => doImport("skip"));
 $("#impUpdate").addEventListener("click", () => doImport("update"));
 $("#impPick").addEventListener("click", startImport);
+$("#fileImport").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const staged = await stageFile(file); if (!staged) return;
+  const r = await api().preview_import(staged.path);
+  if (!r || r.ok === false) { toast((r && r.error) || "Could not read that file", true); return; }
+  showImportPreview(r);
+});
+
+// ---- backups ------------------------------------------------------------------
+async function saveBackup() {
+  if (fileSaved(await api().save_backup()) && BROWSER) { mem.now("si.lastBackup"); if (state) render(); }
+}
+let restorePath = null, restoreCurrent = 0;
+async function startRestore() {
+  if (BROWSER) { const f = $("#fileRestore"); f.value = ""; f.click(); return; }  // -> change, below
+  let r;
+  try { r = await api().pick_restore_file(); } catch (e) { toast("Could not open a file: " + e, true); return; }
+  if (!r || r.ok === false) { if (r && r.error) toast(r.error, true); return; }
+  showRestorePreview(r);
+}
+$("#fileRestore").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const staged = await stageFile(file); if (!staged) return;
+  const r = await api().preview_restore(staged.path);
+  if (!r || r.ok === false) { toast((r && r.error) || "Could not read that file", true); return; }
+  showRestorePreview(r);
+});
+function showRestorePreview(r) {
+  restorePath = r.path; restoreCurrent = r.current_items;
+  $("#rstKeep").innerHTML = BROWSER && r.current_items
+    ? "Your current list is <b>downloaded as a backup first</b>, and <b>Undo</b> brings your items back."
+    : "A copy of your current list is kept automatically first, and <b>Undo</b> brings your items back.";
+  const plural = (n) => `${n} item${n === 1 ? "" : "s"}`;
+  const what = r.kind === "desktop" ? "the desktop app's data file"
+    : "a backup" + (r.saved_at ? ` made on ${esc(fmtDate(r.saved_at.slice(0, 10)))}` : "");
+  $("#rstText").innerHTML = `<b>${esc(r.filename)}</b> is ${what}${r.charity_name ? ` for <b>${esc(r.charity_name)}</b>` : ""}, with <b>${plural(r.items)}</b>.<br>`
+    + `Restoring it <b>replaces</b> your current list (${plural(r.current_items)}${r.current_charity_name ? `, ${esc(r.current_charity_name)}` : ""})`
+    + (r.kind === "desktop" ? "." : " and your settings.");
+  $("#rstErr").textContent = "";
+  closeModals(); openModal("#mRestore");
+}
+$("#rstGo").addEventListener("click", async () => {
+  if (BROWSER && restoreCurrent) {        // the browser's own copy is out of reach, so hand it over
+    const b = await api().save_backup();
+    if (!b || !b.ok) { $("#rstErr").textContent = "Could not save your current list first, so nothing was replaced."; return; }
+    download(b.filename.replace(".json", "-before-restore.json"), b.content, b.mime);
+  }
+  const res = await call("restore_file", restorePath);
+  if (!res) return;
+  if (res.ok === false) { $("#rstErr").textContent = res.error; return; }
+  closeModals(); toast(`Restored ${res.items.length} item${res.items.length === 1 ? "" : "s"} - Undo brings your previous items back`); showView("inv");
+});
 
 // ---- first run ------------------------------------------------------------
 async function firstRun() {
-  $("#wFolder").textContent = state.folder;
+  if (state.browser) $("#wWhere").textContent = "Your inventory is saved automatically in this browser, on this device only - another phone or computer will not see it, and clearing your browsing data deletes it. Nothing is uploaded anywhere.";
+  else $("#wFolder").textContent = state.folder;
   openModal("#mWelcome");
   const finish = async (samples) => {
     const name = $("#wName").value.trim();
@@ -747,6 +1076,7 @@ async function firstRun() {
   $("#wSamples").onclick = () => finish(true);
   $("#wEmpty").onclick = () => finish(false);
   $("#wImport").onclick = async () => { await finish(false); startImport(); };
+  $("#wRestore").onclick = async (e) => { e.preventDefault(); await finish(false); startRestore(); };
 }
 
 // ---- boot -------------------------------------------------------------------
@@ -769,13 +1099,14 @@ async function boot() {
 // give it half a second, then run the demo data for design work.
 function startup(tries = 0) {
   if (state || booting) return;
+  if (BROWSER) { if (browserApi) boot(); return; }        // startBrowser() calls boot() when ready
   if (apiReady()) return boot();
   if (!window.pywebview && tries >= 3) return boot();     // browser preview -> demo
   if (tries === 40) toast("Still starting up… (this can take a few seconds the first time)");
   setTimeout(() => startup(tries + 1), 150);
 }
 window.addEventListener("pywebviewready", () => startup());
-startup();
+if (BROWSER) startBrowser(); else startup();
 </script>
 </body>
 </html>

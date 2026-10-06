@@ -5,7 +5,10 @@ track of donated goods on paper or in their heads. It shows what you have, what
 you are running out of, and gives you a ready-to-share **"What we need"** list
 for donors. Everything stays on your own computer.
 
-**[Download for Windows or Mac](https://github.com/felipevicente0227-hash/shelter-inventory/releases/latest)** - free, no account, no internet.
+**[Try it in your browser](https://felipevicente0227-hash.github.io/shelter-inventory/)** - no download, nothing to install.
+Works on Windows, Mac, Chromebooks, tablets and phones.
+
+Or **[download the app for Windows or Mac](https://github.com/felipevicente0227-hash/shelter-inventory/releases/latest)** - free, no account, no internet.
 
 ![dashboard](docs/screenshot-main.png)
 
@@ -19,7 +22,29 @@ Print a count sheet for stock-taking:
 
 ---
 
+## Browser or download?
+
+| | Browser version | Downloaded app |
+|---|---|---|
+| Getting started | Open [the link](https://felipevicente0227-hash.github.io/shelter-inventory/) - nothing to install | Download, then click past the "unknown program" warning once |
+| Works on | Any up-to-date browser: Windows, Mac, Chromebook, tablet, phone | Windows and Mac |
+| Where your list is kept | In that browser, on that device only | In a normal folder on the computer (`Documents/ShelterInventory`) |
+| Internet | Needed for the first visit only | Never |
+| Keep a backup? | **Yes** - clearing your browsing data deletes the list. Use **Settings → Download a backup** now and then (the app reminds you) | Copy the folder now and then |
+
+Both are the same program and do the same things. Either way nothing is
+uploaded anywhere: there is no server, no account and no tracking. A backup
+from one can be restored in the other (**Settings → Restore from a backup**),
+so you can move your list between them - the browser version also accepts the
+desktop app's `inventory_data.json` directly.
+
 ## For charities: get it running in 2 minutes
+
+**In the browser (any device)**
+
+Open **https://felipevicente0227-hash.github.io/shelter-inventory/**, type your charity's name, and start. Bookmark the page (or
+"Add to Home Screen" on a phone or tablet). Remember to download a backup now
+and then.
 
 **Windows**
 
@@ -82,7 +107,12 @@ on Windows, or run `python3 shelter_inventory.py` on Mac/Linux.
 - **Settings**: charity name, your own categories (one per line), the two
   thresholds, how many days ahead to warn about use-by dates, and buttons to
   import a spreadsheet or load the example items. **Data folder** opens the
-  folder where everything is saved.
+  folder where everything is saved (desktop app).
+- **Backups**: **Download a backup** (Settings) saves one file,
+  `shelter-inventory-backup-YYYY-MM-DD.json`, with your whole list and
+  settings. **Restore from a backup** shows what it will replace and asks
+  first; your current list is kept as an automatic backup before anything is
+  replaced, and **Undo** brings your items back.
 
 The app draws its screen with the web engine already on your computer (Edge
 on Windows, Safari on a Mac) — it still needs no internet. On a very old
@@ -147,25 +177,35 @@ Python 3 plus one package, `pywebview` (the window). The data layer is standard 
 
 ```
 pip install pywebview
-python tests.py            # 63 tests, no window, nothing outside a temp folder
+python tests.py            # 78 tests, no window, nothing outside a temp folder
 python shelter_inventory.py
 ```
 
 Open `webui/index.html` in any browser to work on the design with sample data
-(no Python needed — it runs in demo mode).
+(no Python needed — it runs in demo mode; on a web address add `?demo`).
+
+The browser version is the same page. Served over http(s) it loads a pinned
+[Pyodide](https://pyodide.org) from cdn.jsdelivr.net, copies `inventory_core.py`
+and `webui/browser_api.py` into it, and keeps `/data` in the browser's
+IndexedDB. `py dev/smoke_browser.py` checks it end to end in headless
+Chromium (needs Playwright).
 
 | File | What it does |
 |---|---|
 | `inventory_core.py` | Data folder, safe saving, backups, undo, the urgent/low/ok logic, use-by dates, CSV/Excel import (standard library only), CSV and needs-list exports. No GUI code. |
 | `shelter_inventory.py` | The window: opens `webui/index.html` with pywebview and exposes `Api` to it. |
-| `webui/index.html` | The whole interface — styles, scripts, icons — in one file. No internet. |
+| `webui/index.html` | The whole interface — styles, scripts, icons — in one file. Used by the desktop app (no internet) and by the browser version. |
+| `webui/browser_api.py` | The browser version's bridge: same methods as `Api`, built on `inventory_core.StoreApi`; files are downloads instead of save dialogs. |
+| `webui/sw.js` | Service worker: caches the page, the two Python files and the pinned Pyodide so the browser version opens offline. Bump `CACHE` each release. |
 | `shelter_inventory_classic.py` | The plain tkinter window, used automatically when no web engine is available. |
 | `tests.py` | Tests for the core (including import and use-by dates) and the `Api` bridge. |
 | `dev/smoke_gui.py` | Drives the real window under `xvfb` for a screenshot and a crash check. |
+| `dev/smoke_browser.py` | Builds `_site/` and checks the browser version in headless Chromium: real backend, reload, import, backup and restore. |
 | `docs/examples/` | Sample spreadsheets for trying Import. |
 | `CHANGELOG.md` | What changed in each version, in plain English. It becomes the release notes. |
 | `BUILD EXE (double-click me).cmd` | Runs the tests, then builds `dist\ShelterInventory.exe` with PyInstaller. |
 | `.github/workflows/build.yml` | Builds Windows and Mac downloads on GitHub and attaches them to a Release when you push a tag like `v0.2.1`. |
+| `.github/workflows/pages.yml` | On every push to main: runs the tests and publishes the browser version to GitHub Pages. |
 
 ### How saving works (the bug v0.1 had)
 
@@ -192,14 +232,15 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Releasing a new version
 
-1. Bump `APP_VERSION` in `inventory_core.py`.
+1. Bump `APP_VERSION` in `inventory_core.py` and `CACHE` in `webui/sw.js`
+   (a test checks they match).
 2. Add a section to `CHANGELOG.md` first - it becomes the release notes.
 3. `git tag v0.6.2 && git push --tags`
 4. GitHub builds the `.exe` and the Mac zip and attaches them to the Release.
 
 ### Design rules
 
-- One charity, one computer, one folder. No server, no accounts, no internet.
+- One charity, one computer, one folder (or one browser). No server, no accounts, no tracking.
 - Never lose data silently. Every failure is visible; every change is undoable.
 - Plain text formats only (JSON, CSV, TXT) so the data outlives the program.
 

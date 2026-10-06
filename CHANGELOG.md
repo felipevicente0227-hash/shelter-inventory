@@ -4,6 +4,15 @@ Newest first. To get the latest version, download it from the
 [Releases page](https://github.com/felipevicente0227-hash/shelter-inventory/releases/latest) -
 your data stays where it is.
 
+## v0.7.0 - 2026-10-06
+
+- Try it in your browser - no download, works on Chromebooks, tablets and
+  phones. Your list stays on your own device.
+  https://felipevicente0227-hash.github.io/shelter-inventory/
+- Download a backup and restore it - also moves your list between the
+  desktop app and the browser.
+- Works offline after the first visit.
+
 ## v0.6.1 - 2026-10-04
 
 - Fresh pictures of the app on the project page, showing how it looks today.

@@ -9,7 +9,8 @@ file with its styles and scripts inside it, no internet needed. pywebview
 opens it in a window using the web engine already on the computer (Edge's
 WebView2 on Windows, Safari's WebKit on a Mac). The page calls the small
 `Api` class below for every change; `Api` calls inventory_core, which does
-the saving. Nothing in this file decides what "urgent" means or where data
+the saving. (The browser version uses the same page with webui/browser_api.py
+in place of this file.) Nothing in this file decides what "urgent" means or where data
 lives - inventory_core.py does, and tests.py checks it.
 
 The previous, plainer window is kept as shelter_inventory_classic.py and
@@ -31,92 +32,18 @@ def resource_path(name: str) -> Path:
     return base / name
 
 
-class Api:
+class Api(core.StoreApi):
     """What the page is allowed to ask Python to do. One method per action.
 
-    Every mutating method returns the full state (or {"ok": False, "error"})
-    so the page never has to guess what changed. Errors from the store are
-    turned into plain sentences; nothing raises across the bridge.
+    Everything that does not need a window - state, changes, settings,
+    import, restore, needs list, count sheet, help - is core.StoreApi, which
+    the browser version (webui/browser_api.py) shares. This class adds the
+    parts that open a file dialog or another program on this computer.
     """
 
     def __init__(self, store: Store, window=None):
-        self.store = store
+        super().__init__(store)
         self.window = window
-
-    # ---- state ------------------------------------------------------------
-    def get_state(self):
-        s = self.store
-        return {
-            "ok": True,
-            "items": s.items,
-            "settings": s.settings,
-            "next_id": s.next_id,
-            "undo_label": s.undo_label,
-            "last_saved": s.last_saved.strftime("%H:%M:%S") if s.last_saved else None,
-            "last_error": s.last_error,
-            "data_file": str(s.data_file),
-            "folder": str(s.folder),
-            "recovered": s.recovered_from_backup,
-            "version": core.APP_VERSION,
-            "today": _dt.date.today().isoformat(),
-        }
-
-    def _do(self, action, *args):
-        try:
-            action(*args)
-        except ValueError as err:
-            return {"ok": False, "error": str(err)}
-        except StoreError as err:
-            return {"ok": False, "error": str(err)}
-        return self.get_state()
-
-    # ---- changes ----------------------------------------------------------
-    def add_item(self, name, category, current_qty, target_qty, expires=""):
-        return self._do(self.store.add_item, name, category, current_qty, target_qty, expires)
-
-    def set_quantity(self, item_id, qty):
-        return self._do(self.store.set_quantity, int(item_id), qty)
-
-    def update_item(self, item_id, name, category, current_qty, target_qty, expires=""):
-        return self._do(self.store.update_item, int(item_id), name, category, current_qty, target_qty, expires)
-
-    def delete_item(self, item_id):
-        return self._do(self.store.delete_item, int(item_id))
-
-    def undo(self):
-        return self._do(self.store.undo)
-
-    def load_samples(self):
-        return self._do(self.store.load_sample_items)
-
-    def save_settings(self, changes):
-        s = self.store.settings
-        if "charity_name" in changes:
-            s["charity_name"] = str(changes["charity_name"] or "").strip()[:80]
-        if "categories" in changes:
-            cats = [str(c).strip()[:40] for c in changes["categories"] if str(c).strip()]
-            if not cats:
-                return {"ok": False, "error": "Keep at least one category."}
-            s["categories"] = list(dict.fromkeys(cats))
-        try:
-            urgent = int(changes.get("urgent_below_percent", s["urgent_below_percent"]))
-            low = int(changes.get("low_below_percent", s["low_below_percent"]))
-        except (TypeError, ValueError):
-            return {"ok": False, "error": "The two percentages must be whole numbers."}
-        if not (1 <= urgent < low <= 100):
-            return {"ok": False, "error": "Urgent must be below Low, both between 1 and 100."}
-        s["urgent_below_percent"], s["low_below_percent"] = urgent, low
-        if "expiry_warn_days" in changes:
-            try:
-                days = int(changes["expiry_warn_days"])
-            except (TypeError, ValueError):
-                return {"ok": False, "error": "Use-by warning must be a whole number of days."}
-            if not (0 <= days <= 365):
-                return {"ok": False, "error": "Use-by warning must be between 0 and 365 days."}
-            s["expiry_warn_days"] = days
-        if "setup_done" in changes:
-            s["setup_done"] = bool(changes["setup_done"])
-        return self._do(self.store.save_settings)
 
     # ---- import from a spreadsheet ----------------------------------------
     def _open_dialog(self, kinds):
@@ -137,56 +64,26 @@ class Api:
             return {"ok": False}
         return self.preview_import(path)
 
-    def preview_import(self, path):
-        try:
-            table = core.read_table_file(Path(path))
-            parsed = core.parse_import_table(table)
-        except (OSError, ValueError) as err:
-            return {"ok": False, "error": f"Could not read that file: {err}"}
-        except Exception as err:                       # a broken zip, odd XML...
-            return {"ok": False, "error": f"That file could not be understood ({type(err).__name__}: {err})."}
-        existing = {i["name"].lower() for i in self.store.items}
-        dupes = sum(1 for r in parsed["rows"] if r["name"].lower() in existing)
-        return {
-            "ok": True,
-            "path": str(path),
-            "filename": Path(path).name,
-            "headers": parsed["headers"],
-            "mapping": {k: (parsed["headers"][v] if v < len(parsed["headers"]) else f"column {v + 1}")
-                        for k, v in parsed["mapping"].items()},
-            "sample": parsed["rows"][:6],
-            "total": parsed["total"],
-            "duplicates": dupes,
-            "problems": parsed["problems"][:12],
-            "more_problems": max(0, len(parsed["problems"]) - 12),
-        }
+    # ---- backups ------------------------------------------------------------
+    def pick_restore_file(self):
+        """Choose a backup (or an inventory_data.json) and show what it would
+        replace. Nothing is changed until restore_file is called."""
+        path = self._open_dialog(("Backups (*.json)", "All files (*.*)"))
+        if not path:
+            return {"ok": False}
+        return self.preview_restore(path)
 
-    def import_file(self, path, on_duplicate="skip"):
+    def save_backup(self):
+        path = self._save_dialog(core.backup_filename(), ("Backup (*.json)",))
+        if not path:
+            return {"ok": False}
         try:
-            table = core.read_table_file(Path(path))
-            parsed = core.parse_import_table(table)
-            if not parsed["rows"]:
-                return {"ok": False, "error": parsed["problems"][0] if parsed["problems"] else "No items found in that file."}
-            summary = self.store.import_rows(parsed["rows"], on_duplicate)
-        except (OSError, ValueError) as err:
-            return {"ok": False, "error": str(err)}
-        except StoreError as err:
-            return {"ok": False, "error": str(err)}
-        state = self.get_state()
-        state["import"] = summary
-        return state
-
-    # ---- exports ----------------------------------------------------------
-    def needs_list(self):
-        return core.needs_list_text(self.store)
+            core.write_text_file(Path(path), core.backup_text(self.store))
+        except OSError as err:
+            return {"ok": False, "error": f"Save failed: {err}"}
+        return {"ok": True, "path": str(path)}
 
     # ---- count sheet + help -----------------------------------------------
-    def count_sheet(self):
-        return {"ok": True, "rows": core.count_sheet_rows(self.store),
-                "text": core.count_sheet_text(self.store),
-                "charity_name": self.store.settings.get("charity_name") or "Our shelter",
-                "date": _dt.date.today().strftime("%d %B %Y")}
-
     def save_count_sheet(self):
         path = self._save_dialog(f"stock-count-{_dt.date.today():%Y-%m-%d}.txt", ("Text file (*.txt)",))
         if not path:
@@ -196,11 +93,6 @@ class Api:
         except OSError as err:
             return {"ok": False, "error": f"Save failed: {err}"}
         return {"ok": True, "path": str(path)}
-
-    def help_info(self):
-        return {"ok": True, "version": core.APP_VERSION, "app_url": core.APP_URL,
-                "support_email": core.SUPPORT_EMAIL, "folder": str(self.store.folder),
-                "last_error": self.store.last_error}
 
     def open_link(self, kind):
         """Open the download page or a pre-filled bug-report email in the
@@ -322,6 +214,9 @@ def main():
 
     api = Api(store)
     html = resource_path("webui/index.html").read_text(encoding="utf-8")
+    # Tell the page it is inside the desktop app: it then waits for
+    # pywebview and never starts the browser version (webui/browser_api.py).
+    html = html.replace('<html lang="en">', '<html lang="en" data-app="desktop">', 1)
     window = webview.create_window(
         f"{store.settings.get('charity_name') or 'Shelter Inventory'} - {core.APP_NAME}",
         html=html, js_api=api, width=1240, height=800, min_size=(960, 620))

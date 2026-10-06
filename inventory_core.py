@@ -9,6 +9,9 @@ If you are reading the code for the first time, start here. This file holds:
   4. EXPORTS            - a CSV of everything, and the "What we need" list for donors
   5. IMPORTS            - reading a charity's existing spreadsheet (CSV or Excel)
   6. USE-BY DATES       - which items are expired or expiring soon
+  7. BACKUPS            - one file with everything, and restoring it (also moves a
+                          list between the desktop app and the browser version)
+  8. THE BRIDGE         - StoreApi: what the window (desktop or browser) may ask for
 
 Nothing in here opens a window, so all of it can be tested without a screen
 (see tests.py). The window lives in shelter_inventory.py and only calls
@@ -47,12 +50,14 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "Shelter Inventory Manager"
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.7.0"
 APP_FOLDER_NAME = "ShelterInventory"
 
 # Where people can download the app. Shown at the bottom of the
 # "What we need" list so that one charity can pass the tool to another.
 APP_URL = "https://github.com/felipevicente0227-hash/shelter-inventory"
+# The browser version: the same page and this same file, run by Pyodide.
+BROWSER_URL = "https://felipevicente0227-hash.github.io/shelter-inventory/"
 # Where a charity can report a problem. Shown in Help; opens their own mail program.
 SUPPORT_EMAIL = "felipe.vicente0227@gmail.com"
 
@@ -430,26 +435,33 @@ class Store:
         self.next_id = max(int(payload.get("next_id", 1) or 1), highest + 1)
 
     def _load_settings(self) -> None:
-        base = json.loads(json.dumps(DEFAULT_SETTINGS))
+        saved = {}
         if self.settings_file.exists():
             try:
                 saved = self._read_json(self.settings_file)
-                for key in base:
-                    if key in saved:
-                        base[key] = saved[key]
             except (json.JSONDecodeError, OSError, ValueError) as err:
                 self.log(f"settings unreadable ({err}); using defaults")
+        self.settings = self.clean_settings(saved)
+
+    @classmethod
+    def clean_settings(cls, saved: dict) -> dict:
+        """Defaults, overlaid with whatever known keys `saved` has, within limits."""
+        base = json.loads(json.dumps(DEFAULT_SETTINGS))
+        for key in base:
+            if key in saved:
+                base[key] = saved[key]
+        _clamp = cls._clamp
         # Sanity limits so a hand-edited file cannot break the colour logic.
-        base["categories"] = self._clean_categories(base.get("categories"))
-        base["urgent_below_percent"] = self._clamp(base.get("urgent_below_percent"), 1, 99, 50)
-        base["low_below_percent"] = self._clamp(base.get("low_below_percent"), 1, 100, 80)
+        base["categories"] = cls._clean_categories(base.get("categories"))
+        base["urgent_below_percent"] = _clamp(base.get("urgent_below_percent"), 1, 99, 50)
+        base["low_below_percent"] = _clamp(base.get("low_below_percent"), 1, 100, 80)
         if base["low_below_percent"] <= base["urgent_below_percent"]:
             base["low_below_percent"] = min(100, base["urgent_below_percent"] + 1)
         base["charity_name"] = str(base.get("charity_name") or "").strip()[:80]
         base["setup_done"] = bool(base.get("setup_done"))
         base["theme"] = str(base.get("theme") or "native").strip()[:20]
-        base["expiry_warn_days"] = self._clamp(base.get("expiry_warn_days"), 0, 365, 30)
-        self.settings = base
+        base["expiry_warn_days"] = _clamp(base.get("expiry_warn_days"), 0, 365, 30)
+        return base
 
     @staticmethod
     def _read_json(path: Path):
@@ -703,6 +715,34 @@ class Store:
             added += 1
         self.save()
         return added
+
+    def restore_backup(self, backup: dict) -> Path | None:
+        """Replace everything with a backup read by read_backup().
+
+        What is here now is first written to backups/before-restore-<time>.json
+        (and Undo can bring the items back), so a restore never loses a list.
+        Returns that file, or None if there was nothing to keep.
+        """
+        kept = None
+        if self.items:
+            self.backup_folder.mkdir(parents=True, exist_ok=True)
+            kept = self.backup_folder / f"before-restore-{_now():%Y%m%d-%H%M%S}.json"
+            try:
+                write_text_file(kept, backup_text(self))
+            except OSError as err:
+                raise StoreError(f"Nothing was restored: could not keep a copy of the "
+                                 f"current list first ({err}).") from err
+        self._snapshot("restore from backup")
+        self.items = json.loads(json.dumps(backup["items"]))
+        self.next_id = max(int(backup["next_id"]), max((i["id"] for i in self.items), default=0) + 1)
+        if backup.get("settings"):
+            self.settings = self.clean_settings(backup["settings"])
+        self.settings["setup_done"] = True
+        self.save()
+        self.save_settings()
+        self.log(f"restored {len(self.items)} items from a {backup['kind']} file"
+                 + (f"; previous list kept as {kept.name}" if kept else ""))
+        return kept
 
     # ------------------------------------------------------------- read-only
 
@@ -1125,3 +1165,249 @@ def write_text_file(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(text)
+
+
+# ==========================================================================
+# 7. BACKUPS - one file with everything
+# ==========================================================================
+#
+# A backup is an inventory_data.json with the settings added to it, so:
+#   * the desktop app and the browser version can both restore it, and
+#   * restoring also accepts a plain inventory_data.json from the desktop
+#     app's data folder - that is how a list moves into the browser.
+
+BACKUP_FORMAT = "shelter-inventory-backup"
+_NOT_A_BACKUP = ("That file is not a Shelter Inventory backup. Pick a file called "
+                 "shelter-inventory-backup-....json, or inventory_data.json from the desktop app.")
+
+
+def backup_filename(today: _dt.date | None = None) -> str:
+    return f"shelter-inventory-backup-{(today or _dt.date.today()):%Y-%m-%d}.json"
+
+
+def backup_text(store: Store) -> str:
+    payload = {
+        "format": BACKUP_FORMAT,
+        "app": APP_NAME,
+        "version": APP_VERSION,
+        "saved_at": _now().isoformat(timespec="seconds"),
+        "items": store.items,
+        "next_id": store.next_id,
+        "settings": store.settings,
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
+
+def read_backup(raw) -> dict:
+    """Understand a backup file, or the desktop app's inventory_data.json.
+
+    Returns {"kind": "backup" | "desktop", "items", "next_id", "settings"
+    (None for a desktop data file), "saved_at", "charity_name"}.
+    Raises ValueError with a sentence for the person if it is neither.
+    """
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = bytes(raw).decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise ValueError(_NOT_A_BACKUP) from None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise ValueError(_NOT_A_BACKUP) from None
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise ValueError(_NOT_A_BACKUP)
+    items = Store._clean_items(data["items"])
+    if data["items"] and not items:
+        raise ValueError("None of the items in that file could be read, so nothing was changed.")
+    try:
+        next_id = int(data.get("next_id") or 1)
+    except (TypeError, ValueError):
+        next_id = 1
+    next_id = max(next_id, max((i["id"] for i in items), default=0) + 1)
+    settings = Store.clean_settings(data["settings"]) if isinstance(data.get("settings"), dict) else None
+    return {
+        "kind": "backup" if data.get("format") == BACKUP_FORMAT else "desktop",
+        "items": items,
+        "next_id": next_id,
+        "settings": settings,
+        "saved_at": str(data.get("saved_at") or "")[:19],
+        "charity_name": settings["charity_name"] if settings else "",
+    }
+
+
+# ==========================================================================
+# 8. THE BRIDGE - what the window may ask for
+# ==========================================================================
+#
+# The page (webui/index.html) calls these methods by name. The desktop app
+# (shelter_inventory.Api) and the browser version (webui/browser_api.py) both
+# start from StoreApi, so they behave the same; they differ only where the
+# desktop opens a file dialog and the browser hands a file to the person.
+
+class StoreApi:
+    """Every mutating method returns the full state (or {"ok": False, "error"})
+    so the page never has to guess what changed. Errors from the store are
+    turned into plain sentences; nothing raises across the bridge."""
+
+    def __init__(self, store: Store):
+        self.store = store
+
+    # ---- state ------------------------------------------------------------
+    def get_state(self):
+        s = self.store
+        return {
+            "ok": True,
+            "items": s.items,
+            "settings": s.settings,
+            "next_id": s.next_id,
+            "undo_label": s.undo_label,
+            "last_saved": s.last_saved.strftime("%H:%M:%S") if s.last_saved else None,
+            "last_error": s.last_error,
+            "data_file": str(s.data_file),
+            "folder": str(s.folder),
+            "recovered": s.recovered_from_backup,
+            "version": APP_VERSION,
+            "today": _dt.date.today().isoformat(),
+        }
+
+    def _do(self, action, *args):
+        try:
+            action(*args)
+        except ValueError as err:
+            return {"ok": False, "error": str(err)}
+        except StoreError as err:
+            return {"ok": False, "error": str(err)}
+        return self.get_state()
+
+    # ---- changes ----------------------------------------------------------
+    def add_item(self, name, category, current_qty, target_qty, expires=""):
+        return self._do(self.store.add_item, name, category, current_qty, target_qty, expires)
+
+    def set_quantity(self, item_id, qty):
+        return self._do(self.store.set_quantity, int(item_id), qty)
+
+    def update_item(self, item_id, name, category, current_qty, target_qty, expires=""):
+        return self._do(self.store.update_item, int(item_id), name, category, current_qty, target_qty, expires)
+
+    def delete_item(self, item_id):
+        return self._do(self.store.delete_item, int(item_id))
+
+    def undo(self):
+        return self._do(self.store.undo)
+
+    def load_samples(self):
+        return self._do(self.store.load_sample_items)
+
+    def save_settings(self, changes):
+        s = self.store.settings
+        if "charity_name" in changes:
+            s["charity_name"] = str(changes["charity_name"] or "").strip()[:80]
+        if "categories" in changes:
+            cats = [str(c).strip()[:40] for c in changes["categories"] if str(c).strip()]
+            if not cats:
+                return {"ok": False, "error": "Keep at least one category."}
+            s["categories"] = list(dict.fromkeys(cats))
+        try:
+            urgent = int(changes.get("urgent_below_percent", s["urgent_below_percent"]))
+            low = int(changes.get("low_below_percent", s["low_below_percent"]))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "The two percentages must be whole numbers."}
+        if not (1 <= urgent < low <= 100):
+            return {"ok": False, "error": "Urgent must be below Low, both between 1 and 100."}
+        s["urgent_below_percent"], s["low_below_percent"] = urgent, low
+        if "expiry_warn_days" in changes:
+            try:
+                days = int(changes["expiry_warn_days"])
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "Use-by warning must be a whole number of days."}
+            if not (0 <= days <= 365):
+                return {"ok": False, "error": "Use-by warning must be between 0 and 365 days."}
+            s["expiry_warn_days"] = days
+        if "setup_done" in changes:
+            s["setup_done"] = bool(changes["setup_done"])
+        return self._do(self.store.save_settings)
+
+    # ---- import from a spreadsheet ----------------------------------------
+    def preview_import(self, path):
+        """Show what we understood BEFORE importing anything. Changes nothing."""
+        try:
+            table = read_table_file(Path(path))
+            parsed = parse_import_table(table)
+        except (OSError, ValueError) as err:
+            return {"ok": False, "error": f"Could not read that file: {err}"}
+        except Exception as err:                       # a broken zip, odd XML...
+            return {"ok": False, "error": f"That file could not be understood ({type(err).__name__}: {err})."}
+        existing = {i["name"].lower() for i in self.store.items}
+        dupes = sum(1 for r in parsed["rows"] if r["name"].lower() in existing)
+        return {
+            "ok": True,
+            "path": str(path),
+            "filename": Path(path).name,
+            "headers": parsed["headers"],
+            "mapping": {k: (parsed["headers"][v] if v < len(parsed["headers"]) else f"column {v + 1}")
+                        for k, v in parsed["mapping"].items()},
+            "sample": parsed["rows"][:6],
+            "total": parsed["total"],
+            "duplicates": dupes,
+            "problems": parsed["problems"][:12],
+            "more_problems": max(0, len(parsed["problems"]) - 12),
+        }
+
+    def import_file(self, path, on_duplicate="skip"):
+        try:
+            table = read_table_file(Path(path))
+            parsed = parse_import_table(table)
+            if not parsed["rows"]:
+                return {"ok": False, "error": parsed["problems"][0] if parsed["problems"] else "No items found in that file."}
+            summary = self.store.import_rows(parsed["rows"], on_duplicate)
+        except (OSError, ValueError) as err:
+            return {"ok": False, "error": str(err)}
+        except StoreError as err:
+            return {"ok": False, "error": str(err)}
+        state = self.get_state()
+        state["import"] = summary
+        return state
+
+    # ---- backups ------------------------------------------------------------
+    def preview_restore(self, path):
+        """What a restore would replace, for the person to confirm. Changes nothing."""
+        try:
+            backup = read_backup(Path(path).read_bytes())
+        except (OSError, ValueError) as err:
+            return {"ok": False, "error": str(err)}
+        return {
+            "ok": True,
+            "path": str(path),
+            "filename": Path(path).name,
+            "kind": backup["kind"],
+            "items": len(backup["items"]),
+            "charity_name": backup["charity_name"],
+            "saved_at": backup["saved_at"],
+            "current_items": len(self.store.items),
+            "current_charity_name": self.store.settings.get("charity_name") or "",
+        }
+
+    def restore_file(self, path):
+        try:
+            backup = read_backup(Path(path).read_bytes())
+            self.store.restore_backup(backup)
+        except (OSError, ValueError) as err:
+            return {"ok": False, "error": str(err)}
+        except StoreError as err:
+            return {"ok": False, "error": str(err)}
+        return self.get_state()
+
+    # ---- exports, count sheet, help ---------------------------------------
+    def needs_list(self):
+        return needs_list_text(self.store)
+
+    def count_sheet(self):
+        return {"ok": True, "rows": count_sheet_rows(self.store),
+                "text": count_sheet_text(self.store),
+                "charity_name": self.store.settings.get("charity_name") or "Our shelter",
+                "date": _dt.date.today().strftime("%d %B %Y")}
+
+    def help_info(self):
+        return {"ok": True, "version": APP_VERSION, "app_url": APP_URL,
+                "support_email": SUPPORT_EMAIL, "folder": str(self.store.folder),
+                "last_error": self.store.last_error}

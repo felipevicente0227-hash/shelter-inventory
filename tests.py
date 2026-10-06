@@ -10,6 +10,7 @@ Every test gets its own empty folder, so they cannot see each other's files.
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -731,6 +732,181 @@ class ApiTests(TempFolderTest):
         a.add_item("Soup", "Food", "1", "10")
         self.assertIn("Soup", a.needs_list())
         self.assertEqual(a.export_csv(), {"ok": False})     # no window -> no dialog -> nothing written
+
+    def test_backup_dialogs_without_window(self):
+        a = self.api()
+        self.assertEqual(a.save_backup(), {"ok": False})
+        self.assertEqual(a.pick_restore_file(), {"ok": False})
+
+
+# ------------------------------------------------------------- backups
+
+class BackupTests(TempFolderTest):
+    """One file with everything; restoring it, or a desktop inventory_data.json."""
+
+    def filled(self, folder, name="Hope House"):
+        s = Store(folder)
+        s.load()
+        s.add_item("Soup", "Food", 3, 10, "2027-01-31")
+        s.add_item("Blankets", "Bedding", 9, 10)
+        s.settings["charity_name"] = name
+        s.settings["categories"] = ["Food", "Bedding", "Toys"]
+        s.save_settings()
+        return s
+
+    def test_backup_round_trip(self):
+        source = self.filled(self.tmp / "a")
+        backup = core.read_backup(core.backup_text(source))
+        self.assertEqual(backup["kind"], "backup")
+        self.assertEqual(backup["charity_name"], "Hope House")
+        target = Store(self.tmp / "b"); target.load()
+        target.restore_backup(backup)
+        again = Store(self.tmp / "b"); again.load()
+        self.assertEqual(again.items, source.items)
+        self.assertEqual(again.settings["categories"], ["Food", "Bedding", "Toys"])
+        self.assertTrue(again.settings["setup_done"])
+        self.assertEqual(again.next_id, source.next_id)
+
+    def test_restore_desktop_inventory_data_json(self):
+        desktop = self.filled(self.tmp / "desktop", name="Desktop Shelter")
+        raw = desktop.data_file.read_bytes()           # exactly what the desktop app writes
+        backup = core.read_backup(raw)
+        self.assertEqual(backup["kind"], "desktop")
+        self.assertIsNone(backup["settings"])
+        target = Store(self.tmp / "browser"); target.load()
+        target.settings["charity_name"] = "Kept"
+        target.restore_backup(backup)
+        self.assertEqual([i["name"] for i in target.items], ["Soup", "Blankets"])
+        self.assertEqual(target.items[0]["expires"], "2027-01-31")
+        self.assertEqual(target.settings["charity_name"], "Kept", "a data file has no settings to replace")
+
+    def test_restore_keeps_current_list_and_can_be_undone(self):
+        target = self.filled(self.folder, name="Before")
+        incoming = Store(self.tmp / "other"); incoming.load()
+        incoming.add_item("Socks", "Clothing", 1, 5)
+        kept = target.restore_backup(core.read_backup(core.backup_text(incoming)))
+        self.assertTrue(kept.exists())
+        self.assertEqual([i["name"] for i in core.read_backup(kept.read_bytes())["items"]], ["Soup", "Blankets"])
+        self.assertEqual([i["name"] for i in target.items], ["Socks"])
+        target.undo()
+        self.assertEqual([i["name"] for i in target.items], ["Soup", "Blankets"])
+
+    def test_backup_file_also_loads_as_desktop_data_file(self):
+        source = self.filled(self.tmp / "a")
+        self.folder.mkdir(parents=True)
+        (self.folder / core.DATA_FILENAME).write_text(core.backup_text(source), encoding="utf-8")
+        self.assertEqual(self.store().items, source.items)
+
+    def test_not_a_backup(self):
+        for raw in (b"\xff\xfe nonsense", "not json", "[1, 2]", '{"hello": 1}', '{"items": "no"}'):
+            with self.assertRaises(ValueError, msg=raw):
+                core.read_backup(raw)
+        with self.assertRaises(ValueError):
+            core.read_backup('{"items": [{"nonsense": true}]}')
+        self.assertEqual(core.read_backup('{"items": []}')["items"], [])
+
+    def test_backup_settings_are_cleaned(self):
+        raw = json.dumps({"format": core.BACKUP_FORMAT, "items": [],
+                          "settings": {"urgent_below_percent": 900, "categories": [], "evil": 1}})
+        settings = core.read_backup(raw)["settings"]
+        self.assertEqual(settings["urgent_below_percent"], 99)
+        self.assertEqual(settings["categories"], core.DEFAULT_CATEGORIES)
+        self.assertNotIn("evil", settings)
+
+    def test_backup_filename(self):
+        self.assertEqual(core.backup_filename(dt.date(2026, 10, 6)), "shelter-inventory-backup-2026-10-06.json")
+
+
+# ----------------------------------------------------- the browser version
+
+class BrowserApiTests(TempFolderTest):
+    """webui/browser_api.py, run here the way Pyodide runs it in the page."""
+
+    def api(self, folder=None):
+        import sys
+        webui = str(Path(__file__).resolve().parent / "webui")
+        if webui not in sys.path:
+            sys.path.insert(0, webui)
+        import browser_api
+        return browser_api.BrowserApi(folder or self.folder, staging=self.tmp / "staging")
+
+    def test_round_trip_add_quantity_undo_needs(self):
+        a = self.api()
+        st = a.get_state()
+        self.assertTrue(st["browser"]); self.assertIn("this browser", st["folder"])
+        self.assertTrue(a.add_item("Soup", "Food", "2", "10")["ok"])
+        self.assertEqual(a.set_quantity(1, "4")["items"][0]["current_qty"], 4)
+        self.assertEqual(a.undo()["items"][0]["current_qty"], 2)
+        self.assertIn("Soup: need 8 more", a.needs_list())
+        again = self.api()                                  # a reload of the page
+        self.assertEqual(again.get_state()["items"][0]["current_qty"], 2)
+
+    def test_import_from_bytes_csv_and_xlsx(self):
+        examples = Path(__file__).resolve().parent / "docs" / "examples"
+        for name, count in (("example-stock-list.csv", 4), ("example-stock-list.xlsx", 10)):
+            a = self.api(self.tmp / name)
+            staged = a.stage_file(name, (examples / name).read_bytes())
+            self.assertTrue(staged["ok"], staged)
+            preview = a.preview_import(staged["path"])
+            self.assertTrue(preview["ok"], preview)
+            self.assertEqual(preview["total"], count, name)
+            st = a.import_file(staged["path"], "skip")
+            self.assertEqual(st["import"]["added"], preview["total"], name)
+            self.assertEqual(len(st["items"]), preview["total"])
+
+    def test_stage_file_takes_a_js_array_and_a_safe_name(self):
+        class FakeUint8Array:                               # what Pyodide hands over
+            def to_bytes(self):
+                return b"Item,Have,Need\nSoup,1,5\n"
+        a = self.api()
+        staged = a.stage_file("../../up/there.csv", FakeUint8Array())
+        self.assertEqual(Path(staged["path"]).parent, self.tmp / "staging")
+        self.assertEqual(a.import_file(staged["path"])["import"]["added"], 1)
+
+    def test_backup_then_restore_in_another_browser(self):
+        a = self.api(self.tmp / "laptop")
+        a.save_settings({"charity_name": "Hope House"})
+        a.add_item("Soup", "Food", "2", "10")
+        backup = a.save_backup()
+        self.assertTrue(backup["filename"].startswith("shelter-inventory-backup-"))
+        b = self.api(self.tmp / "phone")
+        b.add_item("Old thing", "Other", "1", "1")
+        staged = b.stage_file(backup["filename"], backup["content"].encode("utf-8"))
+        preview = b.preview_restore(staged["path"])
+        self.assertEqual((preview["kind"], preview["items"], preview["current_items"], preview["charity_name"]),
+                         ("backup", 1, 1, "Hope House"))
+        st = b.restore_file(staged["path"])
+        self.assertEqual([i["name"] for i in st["items"]], ["Soup"])
+        self.assertEqual(st["settings"]["charity_name"], "Hope House")
+        self.assertFalse(b.restore_file(b.stage_file("x.json", b"nope")["path"])["ok"])
+
+    def test_restore_desktop_data_file_into_browser(self):
+        desktop = Store(self.tmp / "Documents"); desktop.load()
+        desktop.add_item("Nappies", "Hygiene", 4, 30)
+        b = self.api()
+        staged = b.stage_file("inventory_data.json", desktop.data_file.read_bytes())
+        self.assertEqual(b.preview_restore(staged["path"])["kind"], "desktop")
+        self.assertEqual(b.restore_file(staged["path"])["items"][0]["name"], "Nappies")
+
+    def test_downloads_have_the_desktop_content(self):
+        a = self.api()
+        a.add_item("Soup", "Food", "2", "10")
+        self.assertEqual(a.export_csv()["content"], core.inventory_csv(a.store))
+        self.assertEqual(a.save_needs()["content"], core.needs_list_text(a.store))
+        self.assertEqual(a.save_count_sheet()["content"], core.count_sheet_text(a.store))
+        self.assertTrue(a.open_link("report")["url"].startswith("mailto:"))
+        self.assertFalse(a.open_folder()["ok"])
+
+    def test_page_files_agree(self):
+        root = Path(__file__).resolve().parent / "webui"
+        page = (root / "index.html").read_text(encoding="utf-8")
+        sw = (root / "sw.js").read_text(encoding="utf-8")
+        self.assertIn(f'const CACHE = "shelter-inventory-v{core.APP_VERSION}";', sw,
+                      "bump the cache name in webui/sw.js for each release")
+        pinned = re.search(r'const PYODIDE_URL = "([^"]+)"', page).group(1)
+        self.assertIn(f'const PYODIDE = "{pinned}";', sw, "sw.js must cache the Pyodide version the page loads")
+        self.assertLess(page.index('<html lang="en">'), page.index("<head>"),
+                        "shelter_inventory.main marks the first <html lang=\"en\"> as the desktop app")
 
 
 if __name__ == "__main__":

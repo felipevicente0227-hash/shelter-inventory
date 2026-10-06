@@ -1,0 +1,51 @@
+# Publishes the browser version to GitHub Pages:
+#   https://felipevicente0227-hash.github.io/shelter-inventory/
+#
+# The site is just five files: the same webui/index.html the desktop app
+# uses, inventory_core.py and webui/browser_api.py (run in the page by
+# Pyodide), the offline helper webui/sw.js, and the icon. No server code -
+# every charity's list stays in their own browser.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python tests.py
+      - name: Put the site together
+        run: |
+          mkdir _site
+          cp webui/index.html webui/browser_api.py webui/sw.js inventory_core.py _site/
+          cp icon.ico _site/favicon.ico
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -15,3 +15,4 @@ PUBLISH_REPORT*.md
 PUBLISH TO GITHUB*.cmd
 dev/ui_*.py
 docs/screenshot-needs.png
+_site/
